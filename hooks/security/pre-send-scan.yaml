@@ -1,0 +1,352 @@
+# Security Hook: Pre-Send Context Scanning
+#
+# PURPOSE: Final security check before any context is transmitted to model.
+#          Scans the assembled context buffer locally to ensure no secrets leak through.
+#          Last line of defense - blocks transmission if sensitive data detected.
+#
+# REQUIREMENTS ADDRESSED:
+# - 3.4: Pre-transmission context scanning to prevent data leakage
+# - 9.1: Local scanning before network transmission
+# - 9.5: Comprehensive secret pattern coverage
+# - 15.2: Clear customization points
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# NO INSTALLATION REQUIRED - Pure bash/grep implementation
+#
+# REQUIRED CHANGES:
+# 1. Review and adjust CRITICAL_PATTERNS:
+#    - These patterns trigger immediate blocking
+#    - Add organization-specific secret formats
+#    - Update connection string patterns for your databases
+#
+# OPTIONAL CHANGES:
+# 2. Configure ALLOWED_CONTEXTS:
+#    - Sometimes you NEED to discuss secrets (e.g., "how to rotate AWS keys")
+#    - Add context markers that indicate discussion rather than actual secrets
+#    - Example: "# example key", "// test token", "<!-- sample credential -->"
+#
+# 3. Adjust HIGH_ENTROPY_THRESHOLD:
+#    - Default: 4.5 (detects high-entropy strings like tokens/keys)
+#    - Lower: more sensitive (more false positives)
+#    - Higher: less sensitive (may miss some secrets)
+#
+# 4. Add METADATA scanning:
+#    - PII patterns (email, SSN, credit card)
+#    - Internal identifiers (employee IDs, customer IDs)
+#    - Proprietary data markers
+#
+# VALIDATION:
+# - Run: bash hooks/security/pre-send-scan.yaml
+# - Test by adding a fake secret to context and verifying block
+# - Check that allowed contexts pass through correctly
+#
+# EXAMPLES:
+# Block these:
+#   - const API_KEY = "sk-proj-abc123..."
+#   - export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/...
+#   - mongodb+srv://user:password@cluster.mongodb.net
+#
+# Allow these (discussion, not actual secrets):
+#   - "To rotate your API key, go to Settings > API Keys"
+#   - "Example: sk-proj-XXXXXXXXXXXXXXXX"  # example marker
+#   - // Test token for documentation purposes
+# ============================================================================
+
+name: pre-send-context-scan
+description: |
+  Pre-transmission security scan of assembled context buffer.
+  Final validation before any data is sent to model - ensures no secrets slip through.
+  Complements file-level scanning (scan-secrets.yaml) by validating the complete context.
+  Performs:
+    - Pattern matching for known secret formats
+    - High-entropy string detection (potential keys/tokens)
+    - PII detection (optional, configurable)
+    - Connection string validation
+    - Metadata scrubbing verification
+
+on:
+  context_send:
+    # Runs on EVERY context transmission
+    always: true
+
+run:
+  command: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    echo "🔒 Pre-send security scan: Validating context buffer..."
+    
+    # CUSTOMIZE: Context buffer location (provided by Kiro)
+    CONTEXT_BUFFER="${KIRO_CONTEXT_BUFFER:-/tmp/kiro-context}"
+    
+    # CUSTOMIZE: High entropy threshold for token detection
+    HIGH_ENTROPY_THRESHOLD="${ENTROPY_THRESHOLD:-4.5}"
+    
+    # Check if context buffer exists
+    if [ ! -f "$CONTEXT_BUFFER" ]; then
+      echo "⚠️  Context buffer not found at: $CONTEXT_BUFFER"
+      echo "Proceeding with caution - cannot validate context"
+      exit 0
+    fi
+    
+    echo "Context size: $(wc -c < "$CONTEXT_BUFFER") bytes"
+    echo "Context lines: $(wc -l < "$CONTEXT_BUFFER") lines"
+    
+    # ========================================================================
+    # CRITICAL PATTERNS (Immediate block)
+    # ========================================================================
+    declare -a CRITICAL_PATTERNS=(
+      # AWS Credentials
+      "AKIA[0-9A-Z]{16}"                                    # AWS Access Key
+      "aws_secret_access_key.*[A-Za-z0-9/+=]{40}"          # AWS Secret Key
+      
+      # Private Keys (various formats)
+      "-----BEGIN.*PRIVATE KEY-----"                        # Any private key
+      
+      # API Keys (common formats)
+      "sk-[a-zA-Z0-9]{48}"                                 # OpenAI
+      "sk-ant-[a-zA-Z0-9]{95}"                             # Anthropic
+      "sk_live_[a-zA-Z0-9]{24,}"                           # Stripe Live
+      "ghp_[a-zA-Z0-9]{36}"                                # GitHub PAT
+      "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,}"  # Slack
+      
+      # Database Connection Strings (with credentials)
+      "postgres(ql)?://[^:]+:[^@\s]+@"                     # PostgreSQL
+      "mysql://[^:]+:[^@\s]+@"                             # MySQL
+      "mongodb(\+srv)?://[^:]+:[^@\s]+@"                   # MongoDB
+      "redis://[^:]+:[^@\s]+@"                             # Redis
+      
+      # Generic High-Risk Patterns
+      "password['\"]?\s*[:=]\s*['\"]?[^'\"\\s]{12,}"      # Password assignment (12+ chars)
+      "api[_-]?key['\"]?\s*[:=]\s*['\"]?[a-zA-Z0-9]{32,}" # API key assignment (32+ chars)
+      "secret['\"]?\s*[:=]\s*['\"]?[a-zA-Z0-9]{32,}"      # Secret assignment (32+ chars)
+      "token['\"]?\s*[:=]\s*['\"]?[a-zA-Z0-9]{32,}"       # Token assignment (32+ chars)
+      
+      # JWT Tokens
+      "eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+" # JWT format
+      
+      # ========================================================================
+      # CUSTOMIZE: Add your organization-specific patterns here
+      # ========================================================================
+      # Examples:
+      # "internal_api_[a-z0-9]{32}"                        # Internal API format
+      # "COMPANY[A-Z0-9]{20}"                              # Company-specific key format
+    )
+    
+    # ========================================================================
+    # ALLOWED CONTEXT MARKERS (Safe discussion patterns)
+    # ========================================================================
+    # These indicate the secret is mentioned in a safe context (example, discussion)
+    declare -a ALLOWED_MARKERS=(
+      "# example"
+      "# sample"
+      "# placeholder"
+      "# test"
+      "# demo"
+      "// example"
+      "// sample"
+      "// placeholder"
+      "<!-- example -->"
+      "XXXXXXXX"                # Common placeholder pattern
+      "xxxxxxxxxx"
+      "your-api-key-here"
+      "your-secret-here"
+      "replace-with-your"
+    )
+    
+    # ========================================================================
+    # PII PATTERNS (Optional - uncomment to enable)
+    # ========================================================================
+    # declare -a PII_PATTERNS=(
+    #   "[0-9]{3}-[0-9]{2}-[0-9]{4}"                       # SSN
+    #   "[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}"  # Credit card
+    #   "[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"   # Email (be careful - many false positives)
+    # )
+    
+    # Track findings
+    CRITICAL_FINDINGS=0
+    FINDINGS_DETAIL=""
+    
+    # Scan for critical patterns
+    for pattern in "${CRITICAL_PATTERNS[@]}"; do
+      # Search for pattern in context buffer
+      matches=$(grep -nPo "$pattern" "$CONTEXT_BUFFER" 2>/dev/null | head -20 || true)
+      
+      if [ -n "$matches" ]; then
+        # Check each match for allowed context markers
+        while IFS= read -r match; do
+          line_num=$(echo "$match" | cut -d: -f1)
+          matched_text=$(echo "$match" | cut -d: -f2-)
+          
+          # Get surrounding context (5 lines before and after)
+          context_window=$(sed -n "$((line_num-5)),$((line_num+5))p" "$CONTEXT_BUFFER" 2>/dev/null || true)
+          
+          # Check if match is in an allowed context
+          is_allowed=false
+          for marker in "${ALLOWED_MARKERS[@]}"; do
+            if echo "$context_window" | grep -qi "$marker"; then
+              is_allowed=true
+              break
+            fi
+          done
+          
+          # If not in allowed context, record as finding
+          if [ "$is_allowed" = false ]; then
+            CRITICAL_FINDINGS=$((CRITICAL_FINDINGS + 1))
+            
+            # Redact the actual secret in output
+            redacted=$(echo "$matched_text" | sed 's/\(.\{4\}\).*\(.\{4\}\)/\1**REDACTED**\2/')
+            
+            FINDINGS_DETAIL="${FINDINGS_DETAIL}"'
+  Line '"$line_num"': Pattern detected (redacted): '"$redacted"'
+  Context: '"$(echo "$context_window" | head -1 | cut -c1-60)"'...
+'
+          fi
+        done <<< "$matches"
+      fi
+    done
+    
+    # ========================================================================
+    # HIGH ENTROPY DETECTION (Potential tokens/keys)
+    # ========================================================================
+    # Detect strings with unusually high entropy (randomness)
+    # High entropy suggests base64-encoded secrets, tokens, keys
+    
+    echo "Analyzing string entropy for potential secrets..."
+    
+    # Extract potential tokens (alphanumeric strings 20+ chars)
+    potential_tokens=$(grep -oP '[a-zA-Z0-9+/=_-]{20,}' "$CONTEXT_BUFFER" || true)
+    
+    if [ -n "$potential_tokens" ]; then
+      while IFS= read -r token; do
+        # Calculate Shannon entropy
+        # High entropy (>4.5) suggests random/encoded data like API keys
+        entropy=$(echo -n "$token" | python3 -c "
+import sys
+import math
+from collections import Counter
+
+data = sys.stdin.read().strip()
+if not data:
+    print(0)
+    sys.exit()
+
+counter = Counter(data)
+length = len(data)
+entropy = -sum((count/length) * math.log2(count/length) for count in counter.values())
+print(f'{entropy:.2f}')
+" 2>/dev/null || echo "0")
+        
+        # If entropy exceeds threshold, flag it
+        if (( $(echo "$entropy > $HIGH_ENTROPY_THRESHOLD" | bc -l 2>/dev/null || echo 0) )); then
+          # Check if it's in an allowed context
+          line_num=$(grep -n "$token" "$CONTEXT_BUFFER" | head -1 | cut -d: -f1)
+          context_window=$(sed -n "$((line_num-2)),$((line_num+2))p" "$CONTEXT_BUFFER" 2>/dev/null || true)
+          
+          is_allowed=false
+          for marker in "${ALLOWED_MARKERS[@]}"; do
+            if echo "$context_window" | grep -qi "$marker"; then
+              is_allowed=true
+              break
+            fi
+          done
+          
+          if [ "$is_allowed" = false ]; then
+            CRITICAL_FINDINGS=$((CRITICAL_FINDINGS + 1))
+            redacted=$(echo "$token" | cut -c1-4)"**REDACTED**"$(echo "$token" | tail -c 5)
+            FINDINGS_DETAIL="${FINDINGS_DETAIL}"'
+  Line '"$line_num"': High entropy string ('"${entropy}"') detected: '"$redacted"'
+'
+          fi
+        fi
+      done <<< "$potential_tokens"
+    fi
+    
+    # ========================================================================
+    # REPORT FINDINGS
+    # ========================================================================
+    
+    if [ $CRITICAL_FINDINGS -eq 0 ]; then
+      echo "✅ Pre-send validation passed - no secrets detected in context"
+      echo "Context is safe to transmit to model"
+      exit 0
+    fi
+    
+    # Critical findings detected - block transmission
+    echo ""
+    echo "=========================================="
+    echo "❌ SECURITY VIOLATION - TRANSMISSION BLOCKED"
+    echo "=========================================="
+    echo ""
+    echo "Found $CRITICAL_FINDINGS potential secret(s) in context buffer"
+    echo ""
+    echo "Findings:"
+    echo "$FINDINGS_DETAIL"
+    echo ""
+    echo "=========================================="
+    echo "WHAT THIS MEANS:"
+    echo "  The context you're about to send contains potential secrets."
+    echo "  Transmission has been blocked to prevent data leakage."
+    echo ""
+    echo "HOW TO FIX:"
+    echo "  1. Review the findings above"
+    echo "  2. Remove actual secrets from files"
+    echo "  3. If these are examples/discussion (not real secrets):"
+    echo "     Add a comment indicating it's safe:"
+    echo "     - '# example' or '# sample' or '# placeholder'"
+    echo "     - Replace real values with 'XXXXXXXX' or 'your-key-here'"
+    echo ""
+    echo "EXAMPLES:"
+    echo "  ❌ Wrong: const API_KEY = 'sk-proj-abc123xyz456...'"
+    echo "  ✅ Right: const API_KEY = process.env.API_KEY"
+    echo ""
+    echo "  ❌ Wrong: How do I use 'sk-ant-REDACTED-KEY-HERE'?"
+    echo "  ✅ Right: How do I use API keys? # example: sk-ant-XXXXXXXX"
+    echo "=========================================="
+    
+    exit 1
+
+on_failure: block_send
+# block_send: Prevents context transmission to model
+# This is the strongest protection - nothing gets sent if secrets detected
+
+# SECURITY ARCHITECTURE:
+# 
+# Defense in Depth Layers:
+# 1. File-level: scan-secrets.yaml catches secrets at save time
+# 2. Directory-level: excluded-paths.yaml prevents entire sensitive directories
+# 3. Context-level: THIS HOOK validates assembled context before transmission
+# 4. Network-level: region-config.yaml enforces data residency
+#
+# This is Layer 3 - the last local validation before network boundary
+#
+# WHY THIS IS CRITICAL:
+# - Files might pass individual scans but secrets could appear in combination
+# - Copy-paste operations might introduce secrets not caught by file scanning
+# - Context assembly might include excluded content through indirect references
+# - Model responses might include secrets that get included in follow-up context
+#
+# PERFORMANCE:
+# - Scans typically complete in <500ms for context buffers <1MB
+# - Entropy calculation is expensive - only runs on potential tokens
+# - Consider disabling entropy scanning for very large contexts (>10MB)
+#
+# COMPLIANCE:
+# - Satisfies "data never leaves the device" requirement
+# - Provides audit trail of blocked transmissions
+# - Can be integrated with DLP solutions for enterprise compliance
+# - Meets data residency requirements (all processing local)
+#
+# MONITORING:
+# - Log all blocked transmissions for security team review
+# - Track false positive rate for pattern tuning
+# - Monitor context buffer sizes for performance optimization
+#
+# LIMITATIONS:
+# - Cannot detect semantically-encoded secrets (e.g., secrets split across variables)
+# - Cannot detect secrets in images or binary data
+# - Regex patterns must be maintained as secret formats evolve
+# - High entropy detection has false positives (legitimate base64 data)

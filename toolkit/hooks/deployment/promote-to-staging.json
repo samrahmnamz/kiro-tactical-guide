@@ -1,0 +1,86 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "promote-to-staging",
+      "description": "Auto-deploy to staging environment when spec is approved. Validates deployment safety before executing (diff review, destructive change detection). Requires human approval (PR review) as final gate. Eliminates manual deployment steps and provides fast feedback on infrastructure changes.",
+      "trigger": "PostFileSave",
+      "matcher": "(\\.kiro/specs/.*\\.md|specs/.*\\.md|docs/specs/.*\\.md|design/.*\\.md|infra/|infrastructure/|terraform/.*\\.tf|k8s/.*\\.(yaml|yml)|cdk/.*\\.ts|cloudformation/.*\\.(yaml|yml))$",
+      "action": {
+        "type": "agent",
+        "prompt": "You are a deployment automation assistant for staging environment promotion.\n\nYour task: Analyze the approved spec changes and deploy to staging environment.\n\nContext:\n- Changed files: ${KIRO_CHANGED_FILES}\n- Spec status: Approved (ready for staging deployment)\n- Environment: Staging\n\nDeployment Workflow:\n\n1. **Spec Analysis**:\n   - Identify what changed in the spec (new features, constraint updates, contract changes)\n   - Determine deployment scope (infrastructure, application code, configuration)\n   - Check for breaking changes or backward incompatibility\n\n2. **Destructive Change Detection**:\n   Scan for potentially destructive operations:\n   - Database schema changes (DROP TABLE, DROP COLUMN, ALTER TABLE with data loss)\n   - Data deletion operations (TRUNCATE, DELETE FROM)\n   - Resource deletions (DynamoDB table delete, S3 bucket delete)\n   - Service interruptions (instance replacements, network changes)\n   \n   If detected, clearly warn: \"⚠️ DESTRUCTIVE CHANGE DETECTED\" with specifics.\n\n3. **Deployment Diff Validation**:\n   - Run diff/plan command to show infrastructure changes\n   - Display: resources to create, update, delete\n   - Highlight: risky changes requiring attention\n   - Estimate: deployment time and potential downtime\n\n4. **Pre-Deployment Checks**:\n   - Verify deployment command is available and configured\n   - Check staging environment credentials and access\n   - Validate spec approval status\n   - Confirm no active incidents in staging (if monitoring available)\n\n5. **Deployment Execution**:\n   - Execute deployment command for staging environment\n   - Monitor deployment progress\n   - Capture deployment logs and output\n   - Verify deployment success\n\n6. **Post-Deployment Validation**:\n   - Run smoke tests against staging (if configured)\n   - Verify service health endpoints\n   - Check for deployment errors or warnings\n   - Confirm deployment matches spec expectations\n\n7. **Deployment Report**:\n   Generate summary:\n   ```markdown\n   # Staging Deployment Report\n   \n   ## Spec Changes\n   - [List key changes from approved spec]\n   \n   ## Infrastructure Changes (Diff)\n   - [Show resources to create/update/delete]\n   - [Highlight destructive changes if any]\n   \n   ## Deployment Execution\n   - Status: ✅ Success / ❌ Failed\n   - Duration: [time]\n   - Resources Deployed: [counts]\n   \n   ## Validation Results\n   - [Health check results]\n   - [Smoke test results if ran]\n   \n   ## Staging URLs\n   - [Service endpoints for manual validation]\n   \n   ## Warnings/Issues\n   - [Any warnings or issues encountered]\n   \n   ## Next Steps\n   1. [Manual validation tasks]\n   2. [Production promotion checklist]\n   \n   ## Rollback Instructions\n   [How to rollback this deployment if issues found]\n   ```\n\nConfiguration:\n- DEPLOYMENT_COMMAND: ${DEPLOYMENT_COMMAND:-cd infra && cdk deploy --require-approval never --context env=staging}\n- STAGING_ENVIRONMENT: ${STAGING_ENVIRONMENT:-staging}\n- DIFF_COMMAND: ${DIFF_COMMAND:-cd infra && cdk diff --context env=staging}\n- DETECT_DESTRUCTIVE: ${DETECT_DESTRUCTIVE:-true}\n- SHOW_DIFF: ${SHOW_DIFF:-true}\n- RUN_TESTS: ${RUN_TESTS:-false}\n- TEST_COMMAND: ${TEST_COMMAND:-npm test}\n\nDestructive Patterns to Detect:\n- DROP TABLE, DROP COLUMN, TRUNCATE, DELETE FROM\n- dynamodb:DeleteTable, s3:DeleteBucket, rds:DeleteDBInstance\n- ec2:TerminateInstances, RemovalPolicy.DESTROY\n\nSafety Guardrails:\n- NEVER skip approval gates: This deployment requires PR review approval\n- ALWAYS show diff: Display infrastructure changes before deployment\n- ALWAYS detect destructive changes: Warn on risky operations\n- NEVER auto-approve production: This hook is staging-only\n- ALWAYS provide rollback instructions: Include rollback steps in report\n\nError Handling:\nIf deployment fails:\n1. Capture full error output and logs\n2. Identify root cause (config error, permission issue, resource conflict)\n3. Provide actionable remediation steps\n4. Include rollback instructions if partial deployment occurred\n5. Do NOT retry automatically - surface error to human operator\n\nRelated Hooks:\n- validate-spec-constraints.json: Ensures code matches approved spec\n- cascade-api-change.json: Updates downstream consumers of API changes\n- deployment-window.json: Enforces regulatory deployment windows (prod)"
+      }
+    }
+  ],
+  "metadata": {
+    "purpose": "Auto-deploy to staging environment when spec is approved. Reduces deployment velocity gap by eliminating manual deployment steps. Enforces spec-first workflow with approval gates for quality assurance.",
+    "requirements": [
+      "6.2: Auto-deploy to staging when spec is approved",
+      "6.5: Configure safe auto-deployment (diff validation, destructive change detection)",
+      "15.2: Clear customization points with examples"
+    ],
+    "addresses": "Primary Concern #4: Deployment Velocity Gap - 77% of teams wait for others before shipping, Only 29% can deploy on demand",
+    "customization": {
+      "required": [
+        "Set DEPLOYMENT_COMMAND for your deployment tool (AWS CDK, SAM, Terraform, Serverless, kubectl, CodeDeploy, Docker Compose, custom script)",
+        "Set STAGING_ENVIRONMENT identifier (AWS account/region, Kubernetes namespace, environment variable)",
+        "Set SPEC_DIRECTORY to your specs location (default: .kiro/specs/)"
+      ],
+      "optional": [
+        "Destructive change detection: DETECT_DESTRUCTIVE (default: true), configure DESTRUCTIVE_PATTERNS",
+        "Diff validation: SHOW_DIFF (default: true), DIFF_COMMAND",
+        "Pre-deployment checks: RUN_TESTS (default: false), TEST_COMMAND",
+        "Notification settings: NOTIFY_SLACK, NOTIFY_EMAIL"
+      ]
+    },
+    "deployment_patterns": {
+      "aws_cdk": "cd infra && cdk deploy --all --require-approval never --context env=staging",
+      "aws_sam": "sam deploy --stack-name my-app-staging --s3-bucket my-deploy-bucket --parameter-overrides Environment=staging --no-confirm-changeset",
+      "terraform": "cd terraform && terraform workspace select staging && terraform apply -auto-approve -var-file=staging.tfvars",
+      "kubernetes_helm": "helm upgrade --install my-app ./charts/my-app --namespace staging --values values.staging.yaml --wait",
+      "serverless": "serverless deploy --stage staging --region us-west-2",
+      "kubectl": "kubectl apply -f k8s/staging/ --namespace=staging"
+    },
+    "destructive_patterns": {
+      "database": "DROP TABLE, DROP COLUMN, TRUNCATE, ALTER TABLE with type changes",
+      "aws_resources": "DynamoDB DeleteTable, RDS DeleteDBInstance, S3 DeleteBucket, ECS DeleteService, Lambda DeleteFunction",
+      "cdk": "RemovalPolicy.DESTROY on stateful resources, autoDeleteObjects: true on S3 buckets",
+      "terraform": "destroy plan action on stateful resources, force_destroy = true, deletion_protection = false"
+    },
+    "workflow_integration": [
+      "validate-spec-constraints.json - Ensures code matches spec before deployment",
+      "cascade-api-change.json - Updates downstream consumers of API changes",
+      "deployment-window.json - Enforces regulatory deployment windows (prod only)"
+    ],
+    "dora_metrics_impact": {
+      "deployment_frequency": "Enable on-demand staging deployments",
+      "lead_time": "Reduce time from spec approval to staging validation",
+      "change_failure_rate": "Diff validation catches issues before production"
+    },
+    "rollback_procedures": {
+      "cdk": "cd infra && cdk deploy PreviousStack --require-approval never --context env=staging",
+      "terraform": "cd terraform && terraform workspace select staging && git checkout <previous-commit> && terraform apply -auto-approve",
+      "kubernetes": "kubectl rollout undo deployment/my-app --namespace=staging",
+      "ecs": "aws ecs update-service --cluster staging-cluster --service my-service --task-definition my-task:PREVIOUS_VERSION --force-new-deployment"
+    },
+    "compliance": [
+      "SOX: Approval gates satisfy change control requirements, audit trail of all deployments",
+      "HIPAA/PCI DSS: Staging environment for testing before production, no PHI/PCI data in staging",
+      "FSI Regulations: Combine with deployment-window.json for production, staging unrestricted"
+    ],
+    "best_practices": [
+      "Test deployment command manually before enabling hook",
+      "Review auto-generated docs periodically for accuracy",
+      "Use approval: pr_review for production services (current setting)",
+      "Enable post-deployment validation (health checks, smoke tests)",
+      "Monitor staging environment after deployment",
+      "Have rollback plan ready (revert PR or manual rollback)"
+    ],
+    "troubleshooting": {
+      "deployment_command_not_found": "Verify deployment tool installed, check PATH, test command manually",
+      "permission_denied": "Check AWS credentials configured, verify IAM policies, check Kubernetes permissions",
+      "diff_validation_fails": "Verify DIFF_COMMAND is correct, check command exits with 0 on success",
+      "deployment_succeeds_but_service_unhealthy": "Enable post-deployment validation, add smoke tests, check CloudWatch logs"
+    }
+  }
+}

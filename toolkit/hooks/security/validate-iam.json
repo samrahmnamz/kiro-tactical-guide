@@ -1,0 +1,48 @@
+{
+  "version": "v1",
+  "hooks": [{
+    "name": "validate-iam-policies",
+    "description": "Validates AWS IAM policies for security best practices. Detects wildcard actions/resources, missing conditions, overly permissive policies to prevent privilege escalation.",
+    "trigger": "PostFileSave",
+    "matcher": "(templates|cloudformation|terraform|cdk|lib|infra|infrastructure|policies|iam)/.*\\.(yaml|yml|json|tf|ts|js)$",
+    "action": {
+      "type": "agent",
+      "prompt": "You are an AWS IAM security auditor. Analyze IAM policies in the changed files for security violations.\n\nSEVERITY LEVELS:\n\nCRITICAL (Block immediately):\n1. Action: \"*\" with Resource: \"*\" (full admin access)\n2. Action: \"*\" without any condition blocks\n3. Resource: \"*\" for high-risk actions: iam:PassRole, iam:AttachRolePolicy, sts:AssumeRole, lambda:InvokeFunction, s3:PutBucketPolicy\n4. Privilege escalation: iam:AttachUserPolicy + iam:CreatePolicy, iam:PutUserPolicy without condition, iam:UpdateAssumeRolePolicy\n\nHIGH (Warn, recommend fixing):\n1. Action wildcards with partial resource constraints: s3:* on specific buckets, ec2:* on all resources\n2. Resource wildcards for data access: s3:GetObject on Resource: \"*\", dynamodb:GetItem on \"*\"\n3. Missing conditions: sts:AssumeRole without aws:PrincipalOrgID, iam:* without MFA, kms:Decrypt without kms:EncryptionContext\n\nMEDIUM (Warn, consider refining):\n1. Wildcard actions with resource prefix constraints: s3:* on company-* buckets\n2. Cross-account access without external ID\n\nLOW (Safe patterns - ALLOWED):\n1. Read-only wildcards: s3:Get*, s3:List*, ec2:Describe*, iam:Get*, cloudwatch:Get*, logs:Describe*\n2. Scoped wildcards with explicit deny statements\n\nFor each policy found:\n1. Extract policy document from CloudFormation (AWS::IAM::Role), Terraform (aws_iam_role), CDK (iam.PolicyStatement), or raw JSON\n2. Check Action, Resource, and Condition fields against severity rules\n3. Output format:\n\n[SEVERITY] Finding Type\nFile: <path>\nLine: <line>\n\nIssue: <specific problem>\nRisk: <security impact>\nRecommendation: <how to fix>\n\nExample fix:\n<code showing corrected policy>\n\nIf no IAM policies found: \"✅ No IAM policies detected in changed files\"\nIf compliant: \"✅ IAM policies validated - no security violations detected\"\n\nAlways prioritize security over convenience. When in doubt, flag as HIGH severity."
+    }
+  }],
+  "metadata": {
+    "purpose": "IAM policy validation for security best practices",
+    "requirements": [
+      "3.3: IAM policy validation for wildcards and missing conditions",
+      "3.7: Inline customization guidance",
+      "15.2: Clear customization points"
+    ],
+    "customization": {
+      "paths": "Adjust matcher to include your IAM policy file locations",
+      "severity_rules": "Modify the prompt to add organization-specific high-risk actions",
+      "exceptions": "Use inline comments for documented exceptions: // iam:allow-wildcard - reason: monitoring"
+    },
+    "examples": {
+      "critical": "Action: '*' with Resource: '*' - full admin access",
+      "high": "iam:AttachUserPolicy without aws:MultiFactorAuthPresent condition",
+      "medium": "s3:* on Resource: 'arn:aws:s3:::company-*/*'",
+      "low_safe": "ec2:Describe* and cloudwatch:Get* wildcards for monitoring"
+    },
+    "impact": {
+      "prevents": [
+        "Privilege escalation attacks",
+        "Lateral movement",
+        "Data exfiltration",
+        "Unauthorized resource access"
+      ],
+      "compliance": [
+        "Principle of least privilege (PCI DSS, SOX, ISO 27001)",
+        "CIS AWS Foundations Benchmark"
+      ]
+    },
+    "integration": [
+      "Combine with scan-secrets.json to prevent IAM access keys in code",
+      "Use with pre-send-scan.json for final validation"
+    ]
+  }
+}

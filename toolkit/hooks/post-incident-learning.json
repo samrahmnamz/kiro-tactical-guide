@@ -1,0 +1,127 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "post-incident-learning",
+      "description": "Automatically capture lessons from incidents and encode them as spec constraints. When incident reports, postmortems, or RCA documents are created or updated, analyzes the root cause, identifies preventable failure modes, and generates spec constraint updates that codify the lesson learned. Prevents knowledge loss when engineers leave and ensures incidents don't recur.",
+      "trigger": "PostFileSave",
+      "matcher": "(docs/incidents/.*\\.md|docs/postmortems/.*\\.md|postmortems/.*\\.md|docs/rca/.*\\.md|incidents/.*\\.md|docs/outages/.*\\.md|INCIDENT-.*\\.md|RCA-.*\\.md|POSTMORTEM-.*\\.md)$",
+      "action": {
+        "type": "agent",
+        "prompt": "You are analyzing an incident report to capture lessons as spec constraints.\n\nCONTEXT:\n- New or updated incident document: ${KIRO_CHANGED_FILES}\n- Spec directory: ${SPEC_DIR:-specs}/\n- Minimum severity for action: ${MIN_SEVERITY:-SEV1}\n- Incident tracking system: ${INCIDENT_TRACKING_SYSTEM:-manual}\n\nYOUR TASK:\n\n1. Read and analyze the incident document thoroughly:\n   - Identify incident severity (SEV1, SEV2, SEV3, etc.)\n   - Extract the root cause (technical failure, process gap, design flaw)\n   - Identify impacted service(s)\n   - Determine if incident was preventable through better constraints\n   - Note any \"we should have...\" statements - these become constraints\n\n2. Determine if this incident warrants spec updates:\n   - Severity check: Is severity >= ${MIN_SEVERITY:-SEV1}?\n   - Preventability: Could this have been caught by spec constraints?\n   - Scope: Is this specific enough to codify (not just \"be more careful\")?\n   - If NO to any above → Log \"Incident analyzed, no spec updates needed\" and exit\n\n3. Identify the relevant service spec(s):\n   - Parse incident doc for service names mentioned\n   - Look for specs in ${SPEC_DIR:-specs}/ matching those services\n   - If multiple services involved, update all relevant specs\n   - If no matching spec exists, flag this and ask user which spec to update\n\n4. Generate spec constraint updates for each relevant spec:\n   \n   A. Add to Constraints section with proper categorization:\n      - Category: security | performance | reliability | compliance | integration\n      - ${FORCE_CATEGORY} if set, otherwise infer from root cause\n      - Format:\n        ```markdown\n        ### [Category]: [Brief constraint statement]\n        \n        **Requirement:** [What MUST/MUST NOT happen]\n        \n        **Rationale:** Prevents recurrence of [incident ID/date] where [brief description].\n        Root cause: [one-sentence root cause from incident doc].\n        \n        **Validation:** [How to verify compliance - test, hook, manual review, alarm]\n        \n        **Reference:** See [link to incident document]\n        ```\n   \n   B. Add to Design Decisions (and why) section:\n      - Document what was decided (the new constraint)\n      - Explain why (the incident and its impact)\n      - Include historical context (what happened, when, impact)\n      - Format:\n        ```markdown\n        ### Decision: [What constraint was added]\n        \n        **Why:** Following [incident ID/date], we experienced [impact description].\n        Root cause was [root cause]. This constraint prevents recurrence by [prevention mechanism].\n        \n        **Context:** [Incident details - what went wrong, why it wasn't caught, lessons learned]\n        \n        **Trade-offs:** [Any performance/complexity costs of this constraint, if applicable]\n        ```\n   \n   C. Add Test Expectations if testable:\n      - Add ✗ (negative) test case demonstrating the failure mode\n      - Format: \"✗ [Specific failure condition from incident] → [expected rejection/error]\"\n      - Example: \"✗ API request without rate limit headers → 429 Too Many Requests\"\n\n5. Preserve institutional knowledge:\n   - Include enough context that a new engineer can understand why this constraint exists\n   - Reference the incident document explicitly\n   - Explain not just \"what\" but \"why\" and \"what happened\"\n   - Link to incident tracking system if available (${INCIDENT_TRACKING_SYSTEM})\n\n6. Create a PR with the spec updates:\n   - PR title: \"Post-incident learning: [Brief lesson] from [incident ID]\"\n   - PR description:\n     ```markdown\n     ## Incident Summary\n     - **Incident ID/Date:** [ID or date]\n     - **Severity:** [SEVn]\n     - **Impacted Service(s):** [service names]\n     - **Root Cause:** [one sentence]\n     - **Impact:** [customer impact, duration, scope]\n     \n     ## Lessons Learned\n     [2-3 key lessons from the incident]\n     \n     ## Spec Updates\n     [List of constraints added and which specs were updated]\n     \n     ## Prevention Mechanism\n     [How these constraints prevent recurrence]\n     \n     ## Validation Plan\n     [How to verify the constraints are enforced]\n     \n     **Incident Document:** [link to incident doc]\n     ```\n\nCONSTRAINT QUALITY GUIDELINES:\n- Be specific and actionable (not vague like \"improve monitoring\")\n- Make constraints testable where possible\n- Include validation method (test, hook, alarm, manual review)\n- Avoid blame language - focus on system improvements\n- Consider cascading effects - should this apply to other services?\n\nCATEGORIZATION LOGIC:\n- Security: Auth failures, data leaks, permission issues, injection attacks\n- Reliability: Timeouts, retry exhaustion, cascading failures, data loss\n- Performance: Latency spikes, throughput degradation, resource exhaustion\n- Compliance: Regulatory violations, audit failures, policy breaches\n- Integration: Dependency failures, contract violations, version mismatches\n\nEXAMPLES OF GOOD CONSTRAINTS:\n\nExample 1 (Security):\n```markdown\n### Security: API authentication must fail closed\n\n**Requirement:** If authentication service is unavailable, API MUST reject all requests \nwith 503 Service Unavailable. MUST NOT fall back to unauthenticated access.\n\n**Rationale:** Prevents recurrence of SEV1 incident (2024-03-15) where auth service \noutage caused API to accept unauthenticated requests, exposing customer data.\nRoot cause: Circuit breaker incorrectly configured to \"allow all\" on auth timeout.\n\n**Validation:** Integration test verifies 503 response when auth mock is unavailable.\nAlarm on auth service health check failures.\n\n**Reference:** docs/incidents/2024-03-15-auth-service-outage.md\n```\n\nExample 2 (Reliability):\n```markdown\n### Reliability: Database queries must have explicit timeouts\n\n**Requirement:** All database queries MUST have explicit timeout <= 5 seconds.\nMUST NOT rely on default connection timeout.\n\n**Rationale:** Prevents recurrence of SEV2 incident (2024-02-10) where slow query \ncaused thread pool exhaustion and service unresponsiveness.\nRoot cause: Query without timeout blocked for 60+ seconds during database failover.\n\n**Validation:** Static analysis hook flags queries without explicit timeout parameter.\nLoad test includes database latency injection to verify timeout behavior.\n\n**Reference:** docs/postmortems/2024-02-10-thread-pool-exhaustion.md\n```\n\nExample 3 (Performance):\n```markdown\n### Performance: Rate limiting must be enforced at edge\n\n**Requirement:** Rate limiting MUST be enforced at API Gateway/ALB before reaching \napplication servers. MUST NOT rely on application-level rate limiting alone.\n\n**Rationale:** Prevents recurrence of SEV1 incident (2024-01-20) where DDoS attack \nbypassed application rate limiter and exhausted database connections.\nRoot cause: Application rate limiter evaluated after expensive database lookups.\n\n**Validation:** Load test with 10,000 req/sec verifies edge rate limiting active.\nAlarm on API Gateway throttling metrics.\n\n**Reference:** docs/incidents/2024-01-20-ddos-attack.md\n```\n\nIMPORTANT:\n- Do NOT add constraints for user error or external factors outside our control\n- Do NOT add vague constraints like \"improve monitoring\" without specifics\n- Do NOT duplicate existing constraints - check first\n- Do NOT add constraints that can't be validated or enforced\n- Do FLAG if the incident suggests architectural changes beyond spec constraints\n\nOUTPUT:\n- Create PR with spec updates following the structure above\n- Include clear commit message: \"Post-incident learning: [lesson] from [incident ID]\"\n- Tag PR with \"incident-response\" label\n- Notify spec owner(s) if ${NOTIFY_ON_UPDATE:-true}"
+      }
+    }
+  ],
+  "metadata": {
+    "purpose": "Capture lessons from incidents and encode them as spec constraints to prevent recurrence. Transforms incident reports, postmortems, and RCA documents into actionable spec updates. Preserves institutional knowledge by codifying 'what went wrong' as 'what must not happen.'",
+    "requirements": [
+      "12.2: Capture lessons from incidents and encode them as spec constraints",
+      "12.4: Traceability - every implementation decision traces back to spec constraint or design decision",
+      "15.2: Clear customization points with examples"
+    ],
+    "addresses": "47% burnout rate problem - Captures expertise before engineers leave, codifies tribal knowledge, ensures incident lessons aren't forgotten, reduces onboarding time, prevents repeated incidents",
+    "customization": {
+      "required": [
+        "Update INCIDENT_DOCS_PATH to point to your incident documentation (default: docs/incidents/, postmortems/)",
+        "Configure SPEC_DIR to match your spec directory structure (default: specs/)",
+        "Set INCIDENT_TRACKING_SYSTEM for MCP integration (pagerduty, opsgenie, servicenow, jira, manual)"
+      ],
+      "optional": [
+        "Configure incident severity thresholds: MIN_SEVERITY (SEV1, SEV2, SEV3)",
+        "Customize constraint categorization: AUTO_CATEGORIZE (true/false), FORCE_CATEGORY (security, performance, reliability)",
+        "Set notification preferences: NOTIFY_ON_UPDATE (true/false), NOTIFICATION_CHANNEL"
+      ]
+    },
+    "environment_variables": {
+      "SPEC_DIR": "Directory containing service specs (default: 'specs')",
+      "INCIDENT_DOCS_PATH": "Base path for incident documentation (default: 'docs/incidents')",
+      "MIN_SEVERITY": "Minimum severity for automatic spec updates (default: 'SEV1')",
+      "INCIDENT_TRACKING_SYSTEM": "'pagerduty' | 'opsgenie' | 'servicenow' | 'jira' | 'manual' (default: 'manual')",
+      "AUTO_CATEGORIZE": "'true' or 'false' (default: 'true')",
+      "FORCE_CATEGORY": "Force constraint category - 'security' | 'performance' | 'reliability' | '' (default: '')",
+      "NOTIFY_ON_UPDATE": "'true' or 'false' (default: 'true')",
+      "NOTIFICATION_CHANNEL": "Slack webhook, email, or other notification endpoint"
+    },
+    "mcp_integration": [
+      "toolkit/mcp/pagerduty.yaml - Fetch PagerDuty incident details as context",
+      "toolkit/mcp/opsgenie.yaml - Fetch Opsgenie alert details as context",
+      "toolkit/mcp/servicenow.yaml - Fetch ServiceNow incident records"
+    ],
+    "workflow_integration": [
+      "validate-against-golden.json - Ensures new constraints align with golden specs",
+      "require-spec-coverage.json - Ensures services have specs to update",
+      "Golden specs - Platform-wide lessons can be encoded in golden specs"
+    ],
+    "knowledge_preservation": [
+      "Capturing expertise before engineers leave",
+      "Codifying tribal knowledge as spec constraints",
+      "Ensuring incident lessons aren't forgotten",
+      "Reducing onboarding time (new engineers read specs, not chat history)",
+      "Preventing repeated incidents when experienced engineers rotate off"
+    ],
+    "time_to_value": {
+      "manual_process": "Incident → postmortem → action items → forgotten (weeks, often incomplete)",
+      "automated_process": "Incident → postmortem → spec updates → PR → constraints live (hours, automatic)",
+      "time_saved": "2-4 hours per incident + prevents recurrence cost"
+    },
+    "dora_metrics_impact": {
+      "time_to_restore": "Specs with incident-derived constraints serve as runbooks",
+      "change_failure_rate": "Constraints prevent repeat incidents",
+      "deployment_frequency": "Confidence to deploy faster with safety constraints",
+      "lead_time": "Less time firefighting, more time shipping features"
+    },
+    "regulatory_compliance": [
+      "SOX Section 404: Demonstrates control improvements from incidents",
+      "ISO 27001: Shows continuous improvement process",
+      "PCI DSS: Documents corrective actions for security incidents",
+      "Maintains audit trail of incident → lesson → prevention linkage"
+    ],
+    "best_practices": [
+      "Write thorough incident reports - garbage in, garbage out",
+      "Include 'Root Cause' and 'Lessons Learned' sections in incident docs",
+      "Review auto-generated constraints carefully - agent may misinterpret",
+      "Consider if constraint should apply to other services (golden spec?)",
+      "Link back to incident doc so context is never lost",
+      "Update test suite to verify new constraints are enforced",
+      "Schedule periodic reviews of incident-derived constraints (are they still relevant?)"
+    ],
+    "common_pitfalls": [
+      "Vague constraints: 'Be more careful' → Make it specific and testable",
+      "Blame-focused: 'Engineer X didn't...' → Focus on system improvements",
+      "Over-constraining: Don't add constraints that make the system unusable",
+      "Under-constraining: Don't add constraints that can't be validated",
+      "Missing context: Future engineers need to know WHY this exists"
+    ],
+    "incident_document_format": {
+      "required_sections": [
+        "Date, Severity, Duration, Impacted Services",
+        "Summary (what happened - customer-facing impact)",
+        "Timeline (chronological sequence of events)",
+        "Root Cause (technical root cause - be specific)",
+        "Lessons Learned (specific lessons with actions)",
+        "Action Items (specific actions with owner and deadline)",
+        "Prevention (how to prevent from happening again)"
+      ]
+    },
+    "metrics_to_track": [
+      "Number of incidents → spec updates",
+      "Repeat incident rate (should decrease over time)",
+      "Spec constraint coverage by service",
+      "Time from incident to spec update",
+      "Spec owner approval rate (low rate = constraints not useful)"
+    ],
+    "security_considerations": [
+      "Incident docs may contain sensitive information (PII, security details)",
+      "Ensure incident docs are in excluded-paths.yaml if they contain secrets",
+      "Use sanitized versions for spec constraint text",
+      "Consider using incident IDs instead of detailed descriptions in public specs"
+    ],
+    "troubleshooting": {
+      "no_pr_created": "Check INCIDENT_DOCS_PATH matches your directory",
+      "wrong_spec_updated": "Verify incident doc mentions service name",
+      "missing_context": "Ensure incident doc has 'Root Cause' section",
+      "too_many_updates": "Increase MIN_SEVERITY threshold",
+      "wrong_constraint_type": "Set FORCE_CATEGORY explicitly"
+    }
+  }
+}

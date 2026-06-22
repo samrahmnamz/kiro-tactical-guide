@@ -1,0 +1,69 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "update-docs-on-api-change",
+      "description": "Automatically synchronize API documentation when route handlers or API contracts change. Reads the service spec and updates docs/api/README.md and OpenAPI specs to reflect new endpoints, changed signatures, or modified behaviors. Eliminates manual doc updates.",
+      "trigger": "PostFileSave",
+      "matcher": "src/(routes|api|controllers|handlers|endpoints)/.*\\.(ts|js)$",
+      "action": {
+        "type": "agent",
+        "prompt": "You are updating API documentation after route handler changes.\n\nCONTEXT:\n- The API route handler or controller has changed: ${KIRO_CHANGED_FILES}\n- Service spec location: ${SPEC_DIR:-specs}/\n- API documentation: ${API_DOCS_PATH:-docs/api/README.md}\n- OpenAPI spec: ${OPENAPI_SPEC_PATH:-docs/openapi.yaml}\n\nYOUR TASK:\n1. Read the service spec for this project to understand the intended API contracts\n2. Analyze the changed route handler to identify:\n   - New endpoints (if any)\n   - Modified endpoint signatures (path, method, parameters)\n   - Changed request/response schemas\n   - Updated error codes or status codes\n   - New or modified authentication requirements\n\n3. Update ${API_DOCS_PATH:-docs/api/README.md} with:\n   - New endpoint documentation (if endpoint was added)\n   - Updated endpoint signatures (if existing endpoint changed)\n   - Current request/response examples\n   - Error handling documentation\n   - Authentication/authorization requirements\n   - Rate limiting information (if applicable)\n\n4. If ${OPENAPI_SPEC_PATH:-docs/openapi.yaml} exists, update it with:\n   - New path definitions\n   - Updated schema definitions\n   - Revised parameter specifications\n   - Current response codes and schemas\n\n5. Maintain consistency:\n   - Use the same format as existing documentation\n   - Keep alphabetical ordering of endpoints (if that's the current style)\n   - Match example style (curl, HTTP, code snippets)\n   - Preserve any custom notes or warnings\n\nDOCUMENTATION STYLE:\n- Format: ${DOC_FORMAT:-markdown}\n- Detail level: ${MARKDOWN_STYLE:-simple}\n- Include examples: ${GENERATE_EXAMPLES:-true}\n- Include deprecated endpoints: ${INCLUDE_DEPRECATED:-false}\n\nIMPORTANT:\n- Do NOT remove existing endpoints unless explicitly deleted in code\n- Do NOT change the overall documentation structure\n- Do NOT modify unrelated sections\n- If uncertain about endpoint behavior, reference the spec\n- If spec is outdated or missing details, flag this in the doc update\n\nVERIFICATION:\nAfter updating documentation:\n- Verify all endpoint paths match the code\n- Verify request/response schemas are accurate\n- Verify authentication requirements are current\n- Check that examples are valid and up-to-date"
+      }
+    }
+  ],
+  "metadata": {
+    "purpose": "Automatically update API documentation when route handlers or API contracts change. Keeps docs/api/README.md and OpenAPI specs in sync with code without manual updates.",
+    "requirements": [
+      "5.1: Auto-update API documentation when route handlers change",
+      "5.5: Inline customization guidance for doc structure",
+      "15.2: Clear customization points with examples"
+    ],
+    "customization": {
+      "required": [
+        "Update API_DOCS_PATH to point to your API documentation directory (default: docs/api/README.md)",
+        "Update OPENAPI_SPEC_PATH if you maintain OpenAPI/Swagger specs (default: docs/openapi.yaml)",
+        "Adjust matcher regex to match your API route file patterns"
+      ],
+      "optional": [
+        "Configure DOC_FORMAT: 'markdown' (default) or 'openapi' or 'both'",
+        "Configure MARKDOWN_STYLE: 'simple' or 'detailed' (includes request/response examples)",
+        "Set AUTO_ADD_NEW_ENDPOINTS: true (default) or false",
+        "Set INCLUDE_DEPRECATED: false (default) or true",
+        "Set GENERATE_EXAMPLES: true (default) or false"
+      ]
+    },
+    "environment_variables": {
+      "SPEC_DIR": "Directory containing service specs (default: 'specs')",
+      "API_DOCS_PATH": "Path to API documentation (default: 'docs/api/README.md')",
+      "OPENAPI_SPEC_PATH": "Path to OpenAPI spec (default: 'docs/openapi.yaml')",
+      "DOC_FORMAT": "Documentation format - 'markdown', 'openapi', or 'both' (default: 'markdown')",
+      "MARKDOWN_STYLE": "'simple' or 'detailed' (default: 'simple')",
+      "GENERATE_EXAMPLES": "'true' or 'false' (default: 'true')",
+      "INCLUDE_DEPRECATED": "'true' or 'false' (default: 'false')",
+      "AUTO_ADD_NEW_ENDPOINTS": "'true' or 'false' (default: 'true')"
+    },
+    "workflow_integration": [
+      "scaffold-service.json - Generates initial docs when new spec is created",
+      "validate-spec-constraints.json - Ensures code matches spec before doc generation"
+    ],
+    "time_savings": "Manual documentation: 15-30 minutes per endpoint change. Automated with this hook: <1 minute. Average API with 20 endpoints: ~10 hours/month saved.",
+    "best_practices": [
+      "Keep your service spec up to date - it's the source of truth",
+      "Review auto-generated docs periodically for accuracy",
+      "Add custom notes/warnings manually in dedicated sections",
+      "Combine with spec-first workflow for best results"
+    ],
+    "troubleshooting": {
+      "docs_not_updating": "Check matcher regex matches your file structure",
+      "wrong_doc_format": "Adjust DOC_FORMAT and MARKDOWN_STYLE environment variables",
+      "missing_spec_file": "Check SPEC_DIR points to your spec directory"
+    },
+    "compliance": [
+      "API documentation is often required for SOC 2, ISO 27001",
+      "Auto-sync ensures documentation is current for audits",
+      "Maintains audit trail of when docs were updated (git history)",
+      "Reduces risk of undocumented API changes"
+    ]
+  }
+}

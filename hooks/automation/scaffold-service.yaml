@@ -1,0 +1,646 @@
+# Automation Hook: Service Scaffolding from Spec
+#
+# PURPOSE: Automatically generate service boilerplate when a new spec is created.
+#          Eliminates manual setup by creating index.ts, types.ts, test scaffolding, README.
+#          Reduces time from spec to first commit from hours to minutes.
+#
+# REQUIREMENTS ADDRESSED:
+# - 5.2: Generate service boilerplate from new spec (index.ts, types.ts, tests, README)
+# - 5.5: Customization guide for team-specific conventions
+# - 15.2: Clear customization points with examples
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# NO INSTALLATION REQUIRED - Uses Kiro agent with model assistance
+#
+# REQUIRED CHANGES:
+# 1. Update OUTPUT_BASE_DIR to match your repository structure:
+#    - Default: examples/ for demonstration projects
+#    - Typical: src/services/, packages/, apps/
+#
+# 2. Adjust SPEC_DIR to where your specs are located:
+#    - Default: examples/**/spec.md for example projects
+#    - Typical: .kiro/specs/, docs/specs/, specifications/
+#
+# OPTIONAL CHANGES:
+# 3. Customize boilerplate structure (see SCAFFOLDING STRUCTURE section):
+#    - Add/remove files from default template
+#    - Modify directory layout (flat vs nested)
+#    - Include additional files (Dockerfile, .env.example, Makefile)
+#
+# 4. Team-specific conventions:
+#    - TypeScript: adjust tsconfig.json settings
+#    - Testing: change from Jest to Vitest, Mocha, etc.
+#    - Linting: include ESLint/Prettier configurations
+#    - CI/CD: add GitHub Actions, GitLab CI, or CircleCI configs
+#
+# 5. Framework-specific templates:
+#    - Express/Fastify for HTTP services
+#    - EventBridge/SQS for event-driven services
+#    - Lambda for serverless functions
+#    - GraphQL for API gateways
+#
+# 6. Infrastructure as Code:
+#    - AWS CDK (TypeScript)
+#    - Terraform
+#    - CloudFormation
+#    - Pulumi
+#
+# VALIDATION:
+# - Create a new spec file in examples/ or your spec directory
+# - Hook should trigger automatically and generate scaffolding
+# - Check that generated files match your conventions
+# - Verify tests can be run: npm test or yarn test
+#
+# TROUBLESHOOTING:
+# - "Service directory already exists" → Hook skips to avoid overwriting
+# - "Spec not found" → Check SPEC_DIR path matches your structure
+# - "Agent timeout" → Large scaffolding may take longer, increase timeout if needed
+#
+# EXAMPLES:
+# - Microservice: index.ts, routes/, services/, models/, tests/
+# - Lambda function: handler.ts, utils/, types.ts, tests/
+# - Event processor: index.ts, handlers/, events/, types.ts, tests/
+# - API gateway: index.ts, resolvers/, schema.graphql, types.ts, tests/
+# ============================================================================
+
+name: scaffold-service-from-spec
+description: |
+  Automatically generates service boilerplate when a new spec is created.
+  Reads the spec (Intent, Contracts, Constraints) and creates:
+  - index.ts (entry point with basic structure)
+  - types.ts (TypeScript interfaces from spec contracts)
+  - Test scaffolding (unit tests with spec expectations)
+  - README.md (service documentation from spec)
+  - package.json (dependencies based on spec requirements)
+  - Infrastructure templates (if specified in spec)
+  
+  Reduces manual setup time from 2-4 hours to 5-10 minutes.
+  Ensures consistency across all services in the organization.
+
+on:
+  file_save:
+    # CUSTOMIZE: Adjust to where your specs are located
+    paths:
+      - "**/spec.md"            # Specs in example directories
+      - "specs/**/*.md"         # Centralized specs directory
+      - ".kiro/specs/**/*.md"   # Kiro specs directory
+      - "**/*.spec.md"          # Alternative spec naming convention
+      
+  # Also trigger when spec is explicitly approved (for stricter workflows)
+  spec_change:
+    status: "approved"
+
+run:
+  agent: sonnet
+  # Uses model for intelligent scaffolding based on spec content
+  # Sonnet provides better reasoning about architecture and structure
+  
+  task: |
+    You are a service scaffolding assistant. Generate production-ready boilerplate from a service specification.
+    
+    ============================================================================
+    SCAFFOLDING STRUCTURE
+    ============================================================================
+    
+    Default structure for TypeScript services:
+    ```
+    <service-name>/
+    ├── src/
+    │   ├── index.ts              # Entry point
+    │   ├── types.ts              # TypeScript interfaces from spec contracts
+    │   ├── <service-name>.ts     # Main service implementation
+    │   ├── config.ts             # Configuration management
+    │   └── utils/
+    │       └── logger.ts         # Logging utilities
+    ├── tests/
+    │   ├── unit/
+    │   │   └── <service-name>.test.ts  # Unit tests based on spec expectations
+    │   └── integration/
+    │       └── api.test.ts       # Integration tests for API contracts
+    ├── infra/                    # Infrastructure as Code (if needed)
+    │   ├── lib/
+    │   │   └── <service-name>-stack.ts
+    │   └── bin/
+    │       └── app.ts
+    ├── README.md                 # Service documentation
+    ├── package.json              # Dependencies
+    ├── tsconfig.json             # TypeScript configuration
+    ├── jest.config.js            # Test configuration
+    └── .env.example              # Environment variables template
+    ```
+    
+    ============================================================================
+    STEP 1: PARSE THE SPEC
+    ============================================================================
+    
+    Extract from the specification:
+    
+    1. Service name:
+       - From spec title or filename
+       - Convert to kebab-case for directory name
+       - Convert to PascalCase for class names
+    
+    2. Intent:
+       - Use as service description in README
+       - Include in package.json description
+    
+    3. Contracts:
+       - API endpoints → Express routes in index.ts
+       - Event schemas → TypeScript interfaces in types.ts
+       - Input/output schemas → Request/response types
+    
+    4. Constraints:
+       - Security → Add auth middleware, encryption utilities
+       - Performance → Add caching, rate limiting
+       - Compliance → Add audit logging, data retention
+       - Integration → Add client libraries for dependencies
+    
+    5. Test Expectations:
+       - ✓ positive cases → Unit test stubs
+       - ✗ negative cases → Error handling test stubs
+       - Edge cases → Integration test scenarios
+    
+    6. Infrastructure needs:
+       - DynamoDB → Add AWS SDK, create table in CDK
+       - Lambda → Add Lambda handler pattern
+       - SQS/SNS → Add message handling
+       - S3 → Add bucket access patterns
+    
+    ============================================================================
+    STEP 2: GENERATE index.ts
+    ============================================================================
+    
+    Create the service entry point:
+    
+    ```typescript
+    // src/index.ts
+    // <Service description from Intent>
+    
+    import express, { Request, Response } from 'express';
+    import { <ServiceName>Service } from './<service-name>';
+    import { logger } from './utils/logger';
+    import { config } from './config';
+    
+    const app = express();
+    app.use(express.json());
+    
+    const service = new <ServiceName>Service();
+    
+    // API routes from spec Contracts
+    // POST /api/<endpoint> → handler
+    app.post('/api/<endpoint>', async (req: Request, res: Response) => {
+      try {
+        logger.info('Processing request', { endpoint: '<endpoint>' });
+        
+        // Input validation from spec
+        // TODO: Implement validation
+        
+        const result = await service.<method>(req.body);
+        
+        res.status(200).json(result);
+      } catch (error) {
+        logger.error('Request failed', { error });
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+    
+    // Health check endpoint
+    app.get('/health', (req: Request, res: Response) => {
+      res.status(200).json({ status: 'healthy' });
+    });
+    
+    const PORT = config.port || 3000;
+    app.listen(PORT, () => {
+      logger.info(`<ServiceName> listening on port ${PORT}`);
+    });
+    
+    export { app };
+    ```
+    
+    ============================================================================
+    STEP 3: GENERATE types.ts
+    ============================================================================
+    
+    Create TypeScript interfaces from spec contracts:
+    
+    ```typescript
+    // src/types.ts
+    // Type definitions derived from spec contracts
+    
+    // Request/Response types from API contracts
+    export interface <Operation>Request {
+      // Fields from spec input schema
+      field1: string;
+      field2: number;
+      field3?: boolean;  // Optional fields marked with ?
+    }
+    
+    export interface <Operation>Response {
+      // Fields from spec output schema
+      id: string;
+      status: 'success' | 'failure';
+      data?: any;
+    }
+    
+    // Domain types from spec
+    export interface <DomainEntity> {
+      id: string;
+      // Additional fields from spec
+      createdAt: string;
+      updatedAt: string;
+    }
+    
+    // Configuration type from spec constraints
+    export interface Config {
+      port: number;
+      environment: 'development' | 'staging' | 'production';
+      // Add fields based on spec requirements
+    }
+    
+    // Error types for spec-defined error cases
+    export class <ServiceName>Error extends Error {
+      constructor(message: string, public code: string) {
+        super(message);
+        this.name = '<ServiceName>Error';
+      }
+    }
+    ```
+    
+    ============================================================================
+    STEP 4: GENERATE SERVICE IMPLEMENTATION
+    ============================================================================
+    
+    Create the main service class:
+    
+    ```typescript
+    // src/<service-name>.ts
+    // <Service description>
+    
+    import { <Operation>Request, <Operation>Response, <ServiceName>Error } from './types';
+    import { logger } from './utils/logger';
+    
+    export class <ServiceName>Service {
+      // Constructor with dependencies from spec
+      constructor(
+        // Inject dependencies (database, external clients, etc.)
+      ) {}
+      
+      // Methods from spec contracts
+      async <method>(request: <Operation>Request): Promise<<Operation>Response> {
+        logger.info('Processing operation', { operation: '<method>' });
+        
+        // Input validation from spec constraints
+        this.validate<Operation>Request(request);
+        
+        // Business logic placeholder
+        // TODO: Implement according to spec Intent and Constraints
+        
+        // Return structure from spec output schema
+        return {
+          id: 'generated-id',
+          status: 'success',
+          data: {}
+        };
+      }
+      
+      // Validation method based on spec constraints
+      private validate<Operation>Request(request: <Operation>Request): void {
+        // Add validation logic from spec constraints
+        if (!request.field1) {
+          throw new <ServiceName>Error('field1 is required', 'VALIDATION_ERROR');
+        }
+      }
+    }
+    ```
+    
+    ============================================================================
+    STEP 5: GENERATE TEST SCAFFOLDING
+    ============================================================================
+    
+    Create unit tests from spec test expectations:
+    
+    ```typescript
+    // tests/unit/<service-name>.test.ts
+    import { <ServiceName>Service } from '../../src/<service-name>';
+    import { <Operation>Request } from '../../src/types';
+    
+    describe('<ServiceName>Service', () => {
+      let service: <ServiceName>Service;
+      
+      beforeEach(() => {
+        service = new <ServiceName>Service();
+      });
+      
+      // ✓ Positive test cases from spec
+      describe('<method> - positive cases', () => {
+        it('should successfully process valid request', async () => {
+          // Arrange
+          const request: <Operation>Request = {
+            field1: 'valid',
+            field2: 123
+          };
+          
+          // Act
+          const result = await service.<method>(request);
+          
+          // Assert
+          expect(result.status).toBe('success');
+          expect(result.id).toBeDefined();
+        });
+      });
+      
+      // ✗ Negative test cases from spec
+      describe('<method> - negative cases', () => {
+        it('should reject invalid request', async () => {
+          // Arrange
+          const request: <Operation>Request = {
+            field1: '',  // Invalid per spec
+            field2: 123
+          };
+          
+          // Act & Assert
+          await expect(service.<method>(request)).rejects.toThrow();
+        });
+      });
+      
+      // Edge cases from spec
+      describe('<method> - edge cases', () => {
+        it('should handle boundary values', async () => {
+          // Test edge cases defined in spec
+        });
+      });
+    });
+    ```
+    
+    ============================================================================
+    STEP 6: GENERATE README.md
+    ============================================================================
+    
+    Create service documentation:
+    
+    ```markdown
+    # <ServiceName>
+    
+    > <Intent from spec>
+    
+    ## Overview
+    
+    <Detailed description from spec Intent>
+    
+    ## API
+    
+    ### Endpoints
+    
+    #### POST /api/<endpoint>
+    
+    <Description from spec Contract>
+    
+    **Request:**
+    ```json
+    {
+      "field1": "string",
+      "field2": 123
+    }
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "id": "string",
+      "status": "success",
+      "data": {}
+    }
+    ```
+    
+    ## Constraints
+    
+    <List constraints from spec>
+    
+    - Security: <security constraints>
+    - Performance: <performance requirements>
+    - Compliance: <compliance requirements>
+    
+    ## Running the Service
+    
+    ```bash
+    # Install dependencies
+    npm install
+    
+    # Run tests
+    npm test
+    
+    # Run locally
+    npm start
+    
+    # Deploy
+    cd infra && cdk deploy
+    ```
+    
+    ## Environment Variables
+    
+    See `.env.example` for required configuration.
+    
+    ## Testing
+    
+    Tests are organized by type:
+    - `tests/unit/` - Unit tests for business logic
+    - `tests/integration/` - Integration tests for API endpoints
+    
+    Run tests: `npm test`
+    
+    ## Architecture
+    
+    <Include architecture notes from spec Design Decisions>
+    ```
+    
+    ============================================================================
+    STEP 7: GENERATE package.json
+    ============================================================================
+    
+    Create dependencies based on spec requirements:
+    
+    ```json
+    {
+      "name": "<service-name>",
+      "version": "1.0.0",
+      "description": "<Intent from spec>",
+      "main": "dist/index.js",
+      "scripts": {
+        "start": "node dist/index.js",
+        "dev": "ts-node src/index.ts",
+        "build": "tsc",
+        "test": "jest",
+        "lint": "eslint src/**/*.ts"
+      },
+      "dependencies": {
+        "express": "^4.18.0",
+        // Add based on spec Constraints and Integration points:
+        // - DynamoDB → "@aws-sdk/client-dynamodb"
+        // - S3 → "@aws-sdk/client-s3"
+        // - SQS → "@aws-sdk/client-sqs"
+        // - Logging → "winston"
+        // - Validation → "joi" or "zod"
+      },
+      "devDependencies": {
+        "@types/express": "^4.17.0",
+        "@types/jest": "^29.0.0",
+        "@types/node": "^18.0.0",
+        "jest": "^29.0.0",
+        "ts-jest": "^29.0.0",
+        "ts-node": "^10.0.0",
+        "typescript": "^5.0.0",
+        "eslint": "^8.0.0"
+      }
+    }
+    ```
+    
+    ============================================================================
+    STEP 8: GENERATE INFRASTRUCTURE (if needed)
+    ============================================================================
+    
+    If spec mentions AWS resources, create CDK infrastructure:
+    
+    ```typescript
+    // infra/lib/<service-name>-stack.ts
+    import * as cdk from 'aws-cdk-lib';
+    import * as lambda from 'aws-cdk-lib/aws-lambda';
+    import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+    import { Construct } from 'constructs';
+    
+    export class <ServiceName>Stack extends cdk.Stack {
+      constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+        super(scope, id, props);
+        
+        // Resources from spec Constraints and Integration points
+        
+        // DynamoDB table if needed
+        const table = new dynamodb.Table(this, '<ServiceName>Table', {
+          partitionKey: { name: 'id', type: dynamodb.AttributeType.STRING },
+          billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+          removalPolicy: cdk.RemovalPolicy.RETAIN  // From spec safety constraints
+        });
+        
+        // Lambda function if needed
+        const handler = new lambda.Function(this, '<ServiceName>Handler', {
+          runtime: lambda.Runtime.NODEJS_18_X,
+          handler: 'index.handler',
+          code: lambda.Code.fromAsset('../dist'),
+          environment: {
+            TABLE_NAME: table.tableName
+          }
+        });
+        
+        // Grant permissions based on spec Constraints
+        table.grantReadWriteData(handler);
+      }
+    }
+    ```
+    
+    ============================================================================
+    EXECUTION INSTRUCTIONS
+    ============================================================================
+    
+    1. Read the spec file that triggered this hook
+    2. Extract service name, intent, contracts, constraints, test expectations
+    3. Determine output directory:
+       - If spec is in examples/<name>/spec.md → use examples/<name>/
+       - If spec is in specs/<name>.md → use src/services/<name>/
+       - If spec is in .kiro/specs/<name>/ → use src/<name>/
+    4. Check if service directory already exists:
+       - If yes: Skip scaffolding (avoid overwriting existing work)
+       - If no: Proceed with generation
+    5. Generate all files in the structure above
+    6. Create a commit message:
+       "chore: scaffold <service-name> from spec
+       
+       Generated from spec: <spec-path>
+       
+       Files created:
+       - src/index.ts
+       - src/types.ts
+       - src/<service-name>.ts
+       - tests/unit/<service-name>.test.ts
+       - README.md
+       - package.json
+       - infra/ (if needed)
+       
+       Next steps:
+       1. Review generated code
+       2. Run: npm install
+       3. Run: npm test
+       4. Implement TODOs in src/<service-name>.ts
+       "
+    7. Report summary:
+       ```
+       ✅ Service scaffolding complete
+       
+       Service: <service-name>
+       Output: <output-directory>
+       
+       Generated files:
+       - <list of files>
+       
+       Next steps:
+       1. cd <output-directory>
+       2. npm install
+       3. npm test
+       4. Implement TODOs marked in source files
+       
+       Estimated time saved: 2-4 hours of manual setup
+       ```
+    
+    ============================================================================
+    CONTEXT FOR SCAFFOLDING
+    ============================================================================
+    
+    Spec file: ${KIRO_CHANGED_FILES}
+    
+    Read this spec and generate the complete service structure.
+    
+    If the file is not a spec (no Intent, Contracts sections), output:
+    "⏭️  Not a service spec - skipping scaffolding"
+    
+    If the service directory already exists, output:
+    "⏭️  Service directory exists - skipping to avoid overwrite"
+
+  approval: pr_review
+  # Requires PR review before committing generated code
+  # Allows developer to inspect scaffolding and make adjustments
+
+on_failure: warn
+# warn: Log issues but allow hook to continue
+# Scaffolding is a convenience - failure shouldn't block other work
+
+# INTEGRATION NOTES:
+# - Combine with update-docs.yaml to keep README in sync with code changes
+# - Use with regen-clients.yaml to generate client libraries after scaffolding
+# - Use with test-on-save.yaml to run tests on generated code
+#
+# TIME SAVINGS:
+# - Manual service setup: 2-4 hours (boilerplate, config, tests, docs, infra)
+# - Automated scaffolding: 5-10 minutes (review + customization)
+# - Net savings: 1.5-3.5 hours per service
+# - For team creating 10 services/quarter: 15-35 hours saved
+#
+# CONSISTENCY BENEFITS:
+# - All services follow same structure
+# - All services have tests from day one
+# - All services have documentation
+# - All services follow spec-driven development pattern
+#
+# CUSTOMIZATION OPTIONS:
+# - Modify templates above to match your team conventions
+# - Add framework-specific patterns (NestJS, Fastify, etc.)
+# - Include CI/CD configs (GitHub Actions, GitLab CI)
+# - Add Docker/Kubernetes manifests
+# - Generate OpenAPI/Swagger specs from contracts
+#
+# ADVANCED PATTERNS:
+# - Monorepo: scaffold in packages/<service-name>/
+# - Microservices: include service mesh config (Istio, Linkerd)
+# - Event-driven: scaffold event schemas and handlers
+# - GraphQL: generate schema and resolvers from contracts
+# - gRPC: generate .proto files and stubs

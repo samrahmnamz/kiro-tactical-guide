@@ -1,0 +1,84 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "lint-on-save",
+      "description": "Run linting checks immediately when files are saved, providing instant feedback to developers. Replaces 3-minute CI feedback loops with <1 second local validation. Supports ESLint, Prettier, flake8, pylint, golint, clippy, and other linters.",
+      "trigger": "PostFileSave",
+      "matcher": "(src/.*\\.(ts|tsx|js|jsx)|tests/.*\\.(ts|tsx|js|jsx)|\\.eslintrc\\.(json|js)|\\.prettierrc|tsconfig\\.json)$",
+      "action": {
+        "type": "command",
+        "command": "#!/bin/bash\nset -euo pipefail\n\nLINT_COMMAND=\"${LINT_COMMAND:-npm run lint}\"\nAUTO_FIX=\"${AUTO_FIX:-false}\"\nFAIL_ON_WARNING=\"${FAIL_ON_WARNING:-false}\"\nCHECK_FORMATTING=\"${CHECK_FORMATTING:-true}\"\nCHANGED_FILES=\"${KIRO_CHANGED_FILES:-}\"\n\necho \"🔍 Running linting checks on saved files...\"\necho \"Files changed: ${CHANGED_FILES:-all files}\"\necho \"\"\n\ndetect_and_recommend() {\n  if [ -f \"package.json\" ]; then\n    if ! grep -q '\"lint\"' package.json 2>/dev/null; then\n      echo \"⚠️  JavaScript/TypeScript project detected but no 'lint' script found\"\n      echo \"\"\n      echo \"Recommended setup:\"\n      echo \"  1. Install ESLint: npm install --save-dev eslint @typescript-eslint/parser @typescript-eslint/eslint-plugin\"\n      echo \"  2. Add to package.json scripts:\"\n      echo '     \"lint\": \"eslint . --ext .ts,.tsx,.js,.jsx\"'\n      echo \"  3. Create .eslintrc.json with your rules\"\n      echo \"\"\n      return 1\n    fi\n  elif [ -f \"setup.py\" ] || [ -f \"pyproject.toml\" ]; then\n    if ! command -v flake8 &> /dev/null && ! command -v pylint &> /dev/null; then\n      echo \"⚠️  Python project detected but no linter installed\"\n      echo \"\"\n      echo \"Recommended setup:\"\n      echo \"  1. Install flake8: pip install flake8\"\n      echo \"  2. Or install pylint: pip install pylint\"\n      echo \"  3. Update LINT_COMMAND to: flake8 . or pylint src/\"\n      echo \"\"\n      return 1\n    fi\n  elif [ -f \"Cargo.toml\" ]; then\n    echo \"ℹ️  Rust project detected - using cargo clippy\"\n    LINT_COMMAND=\"cargo clippy\"\n  fi\n  return 0\n}\n\nif ! detect_and_recommend; then\n  echo \"❌ Linting not configured - skipping checks\"\n  exit 0\nfi\n\nFULL_LINT_CMD=\"$LINT_COMMAND\"\n\nif [ \"$AUTO_FIX\" = \"true\" ]; then\n  if [[ \"$LINT_COMMAND\" == *\"eslint\"* ]]; then\n    FULL_LINT_CMD=\"$LINT_COMMAND --fix\"\n  elif [[ \"$LINT_COMMAND\" == *\"prettier\"* ]]; then\n    FULL_LINT_CMD=\"${LINT_COMMAND/--check/--write}\"\n  fi\n  echo \"Auto-fix enabled: will attempt to fix issues automatically\"\nfi\n\nif [ -n \"$CHANGED_FILES\" ]; then\n  if [[ \"$LINT_COMMAND\" == *\"eslint\"* ]] || [[ \"$LINT_COMMAND\" == *\"prettier\"* ]]; then\n    FULL_LINT_CMD=\"$LINT_COMMAND $CHANGED_FILES\"\n  fi\nfi\n\necho \"Running: $FULL_LINT_CMD\"\necho \"\"\n\nLINT_EXIT_CODE=0\nLINT_OUTPUT=$(eval \"$FULL_LINT_CMD\" 2>&1) || LINT_EXIT_CODE=$?\n\nif [ $LINT_EXIT_CODE -eq 0 ]; then\n  echo \"✅ All linting checks passed!\"\n  echo \"\"\n  echo \"Code quality:\"\n  echo \"  ✓ No style violations\"\n  echo \"  ✓ No formatting issues\"\n  echo \"  ✓ No suspicious patterns detected\"\n  \n  if [ \"$CHECK_FORMATTING\" = \"true\" ] && [[ \"$LINT_COMMAND\" != *\"prettier\"* ]]; then\n    if command -v prettier &> /dev/null || [ -f \"node_modules/.bin/prettier\" ]; then\n      echo \"\"\n      echo \"Checking formatting...\"\n      if npm run format:check &> /dev/null || prettier --check . &> /dev/null 2>&1; then\n        echo \"  ✓ Formatting is consistent\"\n      else\n        echo \"  ⚠️  Formatting issues found (run: npm run format or prettier --write .)\"\n      fi\n    fi\n  fi\n  \n  exit 0\nelse\n  echo \"❌ Linting issues found:\"\n  echo \"\"\n  echo \"$LINT_OUTPUT\"\n  echo \"\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"\"\n  \n  ERROR_COUNT=$(echo \"$LINT_OUTPUT\" | grep -c \"✖.*error\" || echo \"0\")\n  WARNING_COUNT=$(echo \"$LINT_OUTPUT\" | grep -c \"⚠.*warning\" || echo \"0\")\n  \n  if [ \"$ERROR_COUNT\" -gt 0 ] || [ \"$WARNING_COUNT\" -gt 0 ]; then\n    echo \"Summary: $ERROR_COUNT error(s), $WARNING_COUNT warning(s)\"\n  fi\n  echo \"\"\n  \n  echo \"How to fix:\"\n  if [ \"$AUTO_FIX\" = \"false\" ]; then\n    echo \"  1. Auto-fix common issues:\"\n    if [[ \"$LINT_COMMAND\" == *\"eslint\"* ]]; then\n      echo \"     npm run lint -- --fix\"\n    elif [[ \"$LINT_COMMAND\" == *\"prettier\"* ]]; then\n      echo \"     npm run format (or prettier --write .)\"\n    else\n      echo \"     Check your linter's auto-fix documentation\"\n    fi\n    echo \"\"\n  fi\n  echo \"  2. Review issues above and fix manually\"\n  echo \"  3. Update linting rules if issues are incorrect (.eslintrc.json)\"\n  echo \"\"\n  \n  if [ \"$FAIL_ON_WARNING\" = \"true\" ] || [ \"$ERROR_COUNT\" -gt 0 ]; then\n    echo \"❌ Linting failed - code quality standards not met\"\n    exit $LINT_EXIT_CODE\n  else\n    echo \"⚠️  Warnings present but not blocking (set FAIL_ON_WARNING=true to block)\"\n    exit 0\n  fi\nfi"
+      }
+    }
+  ],
+  "metadata": {
+    "purpose": "Run linting checks immediately when files are saved, providing instant feedback to developers. Replaces slow CI-based linting with immediate local validation.",
+    "requirements": [
+      "10.2: Instant lint feedback loop (migrate from CI/CD to hooks)",
+      "15.2: Clear customization points with examples"
+    ],
+    "addresses": "Primary Concern 8: Fragmented Toolchains - Single unified hook with instant feedback",
+    "customization": {
+      "required": [
+        "Update LINT_COMMAND to match your project's linting setup (ESLint, Prettier, flake8, pylint, golint, clippy, checkstyle)",
+        "Adjust FILE_PATTERNS matcher regex to match your codebase languages"
+      ],
+      "optional": [
+        "AUTO_FIX: false (default - report only) or true (auto-fix issues)",
+        "FAIL_ON_WARNING: false (default - errors only) or true (block on warnings too)",
+        "CHECK_FORMATTING: true (default) or false (skip format checks)",
+        "Adjust on_failure behavior: warn (show issues but don't block) or block_context (strict enforcement)"
+      ]
+    },
+    "environment_variables": {
+      "LINT_COMMAND": "Command to run linting (default: 'npm run lint')",
+      "AUTO_FIX": "Automatically fix issues if possible (default: false)",
+      "FAIL_ON_WARNING": "Treat warnings as errors (default: false)",
+      "CHECK_FORMATTING": "Also check code formatting (default: true)",
+      "KIRO_CHANGED_FILES": "Specific files that changed (automatically set by Kiro)"
+    },
+    "supported_linters": {
+      "javascript_typescript": "ESLint: eslint . --ext .ts,.tsx,.js,.jsx; Prettier: prettier --check .",
+      "python": "flake8: flake8 src/ tests/; pylint: pylint src/; black: black --check .; mypy: mypy src/",
+      "go": "golint: golint ./...; gofmt: gofmt -l .; go vet: go vet ./...",
+      "rust": "clippy: cargo clippy; rustfmt: cargo fmt -- --check",
+      "java": "checkstyle: gradle checkstyleMain; spotless: gradle spotlessCheck"
+    },
+    "workflow_integration": [
+      "CI/CD pipeline - Hook provides first line of defense, CI is safety net",
+      "Pre-commit hooks - Can coexist with git pre-commit hooks",
+      "IDE linting - Complements IDE-based linting with consistent rules"
+    },
+    "before_after_comparison": {
+      "before_ci_based": "Write code → Commit/push → Wait 3-5 minutes for CI → Discover lint issues → Context switch back → Fix → Commit/push again → Wait another 3-5 minutes. Total: 6-10 minutes per cycle",
+      "after_hook_based": "Write code → Save file → instant lint feedback (<1 second) → Fix immediately → Save again → verified instantly → Commit with confidence. Total: <10 seconds",
+      "time_savings": "~10 minutes per lint fix cycle",
+      "quality_improvement": "Issues caught before git commit"
+    },
+    "gradual_adoption_strategy": {
+      "week_1": "on_failure: warn (show issues, don't block)",
+      "weeks_2_3": "Fix existing issues, update .eslintrc if needed",
+      "week_4_plus": "Switch to on_failure: block_context (strict enforcement)"
+    },
+    "performance": {
+      "typical_lint_time": "<1 second for changed files",
+      "full_project_lint": "2-10 seconds depending on project size",
+      "advantage": "Much faster than CI (no queue time, no container startup, runs locally with no network latency)"
+    },
+    "best_practices": [
+      "Start with on_failure: warn for gradual adoption",
+      "Configure AUTO_FIX: false initially, enable once rules are stable",
+      "Keep linting rules in .eslintrc.json (not hook config)",
+      "Use CHANGED_FILES to lint only what changed (faster)",
+      "Combine with formatting checks for complete code quality"
+    ],
+    "troubleshooting": {
+      "command_not_found": "Install linter: npm install eslint or pip install flake8",
+      "no_output_shown": "Check LINT_COMMAND matches your package.json scripts",
+      "too_many_warnings": "Set FAIL_ON_WARNING to false, or fix issues incrementally",
+      "performance_issues": "Reduce FILE_PATTERNS to critical directories only",
+      "wrong_rules": "Update .eslintrc.json or linter config file"
+    }
+  }
+}

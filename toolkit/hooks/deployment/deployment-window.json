@@ -1,0 +1,96 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "deployment-window",
+      "description": "Enforce time-based deployment restrictions for regulatory compliance. Prevents deployments during high-risk periods such as market trading hours (FSI), peak patient care hours (Healthcare), holiday shopping peaks (Retail), and peak demand hours (Energy). Includes emergency override mechanism with approval and audit trail.",
+      "trigger": "PostFileSave",
+      "matcher": "(infra/prod/|infrastructure/production/|terraform/prod/.*\\.tf|k8s/production/.*\\.(yaml|yml)|cdk/prod/.*\\.ts|cloudformation/prod/.*\\.yaml|prod\\.(yaml|yml)|production\\.(yaml|yml)|\\.env\\.prod|\\.env\\.production|\\.kiro/specs/.*\\.spec\\.md|specs/production/.*\\.md)$",
+      "action": {
+        "type": "command",
+        "command": "#!/bin/bash\nset -e\n\necho \"🕐 Step 1: Checking deployment window...\"\nCURRENT_TIMESTAMP=\"${KIRO_TIMESTAMP:-$(date -u +'%Y-%m-%dT%H:%M:%SZ')}\"\nTIMEZONE=\"${DEPLOYMENT_WINDOW_TIMEZONE:-America/New_York}\"\necho \"Current time: $CURRENT_TIMESTAMP\"\necho \"Configured timezone: $TIMEZONE\"\necho \"\"\n\nCURRENT_DATE=$(echo \"$CURRENT_TIMESTAMP\" | cut -d'T' -f1)\nCURRENT_TIME=$(echo \"$CURRENT_TIMESTAMP\" | cut -d'T' -f2 | cut -d'Z' -f1 | cut -d':' -f1-2)\nCURRENT_DAY=$(date -j -f \"%Y-%m-%d\" \"$CURRENT_DATE\" +\"%A\" 2>/dev/null || date -d \"$CURRENT_DATE\" +\"%A\" 2>/dev/null || echo \"Monday\")\n\necho \"Date: $CURRENT_DATE ($CURRENT_DAY)\"\necho \"Time: $CURRENT_TIME $TIMEZONE\"\necho \"\"\n\necho \"🚫 Step 2: Checking blocked windows...\"\nBLOCKED=false\nBLOCK_REASON=\"\"\n\nif [[ \"$TIMEZONE\" == \"America/New_York\" ]] && [[ \"$CURRENT_DAY\" =~ ^(Monday|Tuesday|Wednesday|Thursday|Friday)$ ]]; then\n  HOUR=$(echo \"$CURRENT_TIME\" | cut -d':' -f1 | sed 's/^0//')\n  MINUTE=$(echo \"$CURRENT_TIME\" | cut -d':' -f2 | sed 's/^0//')\n  TIME_NUM=$((HOUR*60 + MINUTE))\n  \n  if (( TIME_NUM >= 570 && TIME_NUM < 960 )); then\n    BLOCKED=true\n    BLOCK_REASON=\"Market Trading Hours (09:30-16:00 ET) - Active trading period\"\n  fi\n  \n  if (( TIME_NUM >= 960 && TIME_NUM < 1080 )); then\n    BLOCKED=true\n    BLOCK_REASON=\"Settlement Processing (16:00-18:00 ET) - Critical financial operations\"\n  fi\nfi\n\nif [[ \"$BLOCKED\" == \"true\" ]]; then\n  echo \"⛔ BLOCKED: Deployment window is restricted\"\n  echo \"Reason: $BLOCK_REASON\"\n  echo \"\"\nelse\n  echo \"✅ No blocked windows apply\"\n  echo \"\"\nfi\n\necho \"📅 Step 3: Checking restricted dates...\"\nRESTRICTED=false\nRESTRICT_REASON=\"\"\n\ncase \"$CURRENT_DATE\" in\n  \"2025-03-31\") RESTRICTED=true; RESTRICT_REASON=\"Q1 End - Financial reporting period\" ;;\n  \"2025-06-30\") RESTRICTED=true; RESTRICT_REASON=\"Q2 End - Financial reporting period\" ;;\n  \"2025-09-30\") RESTRICTED=true; RESTRICT_REASON=\"Q3 End - Financial reporting period\" ;;\n  \"2025-12-31\") RESTRICTED=true; RESTRICT_REASON=\"Year End - Financial reporting and audit period\" ;;\n  \"2025-04-15\") RESTRICTED=true; RESTRICT_REASON=\"Tax Day - High volume for financial services\" ;;\n  \"2025-11-28\") RESTRICTED=true; RESTRICT_REASON=\"Thanksgiving - Market closed\" ;;\n  \"2025-12-25\") RESTRICTED=true; RESTRICT_REASON=\"Christmas - Market closed\" ;;\nesac\n\nif [[ \"$RESTRICTED\" == \"true\" ]]; then\n  echo \"⛔ RESTRICTED: Deployment date is blocked\"\n  echo \"Reason: $RESTRICT_REASON\"\n  echo \"\"\nelse\n  echo \"✅ No date restrictions apply\"\n  echo \"\"\nfi\n\necho \"🚨 Step 4: Checking for emergency override...\"\nEMERGENCY_OVERRIDE_REQUESTED=\"${DEPLOYMENT_WINDOW_EMERGENCY:-false}\"\nEMERGENCY_JUSTIFICATION=\"${DEPLOYMENT_WINDOW_JUSTIFICATION:-}\"\n\nif [[ \"$EMERGENCY_OVERRIDE_REQUESTED\" == \"true\" ]]; then\n  echo \"⚠️  Emergency override requested\"\n  echo \"Justification: $EMERGENCY_JUSTIFICATION\"\n  echo \"\"\n  \n  if [[ \"${DEPLOYMENT_WINDOW_EMERGENCY_APPROVED:-false}\" == \"true\" ]]; then\n    echo \"✅ Emergency override APPROVED\"\n    echo \"Proceeding with deployment despite window restrictions...\"\n    echo \"\"\n    BLOCKED=false\n    RESTRICTED=false\n    \n    echo \"🔍 AUDIT: Emergency deployment override\" >> deployment-audit.log\n    echo \"  Timestamp: $CURRENT_TIMESTAMP\" >> deployment-audit.log\n    echo \"  Justification: $EMERGENCY_JUSTIFICATION\" >> deployment-audit.log\n    echo \"  Approved by: ${DEPLOYMENT_WINDOW_APPROVER:-UNKNOWN}\" >> deployment-audit.log\n    echo \"  Files changed: ${KIRO_CHANGED_FILES:-}\" >> deployment-audit.log\n    echo \"\" >> deployment-audit.log\n  else\n    echo \"❌ Emergency override NOT approved\"\n    echo \"Deployment will be blocked or queued\"\n    echo \"\"\n  fi\nelse\n  echo \"ℹ️  No emergency override requested\"\n  echo \"\"\nfi\n\nif [[ \"$BLOCKED\" == \"true\" ]] || [[ \"$RESTRICTED\" == \"true\" ]]; then\n  echo \"⏸️  Step 5: Deployment blocked - queueing for later execution\"\n  echo \"\"\n  \n  if [[ \"$BLOCKED\" == \"true\" ]]; then\n    echo \"Next available window:\"\n    echo \"  - After 18:00 ET today (post-settlement)\"\n    echo \"  - OR before 09:30 ET on next business day (pre-market)\"\n    echo \"  - OR weekends (Saturday/Sunday)\"\n    echo \"\"\n  fi\n  \n  if [[ \"$RESTRICTED\" == \"true\" ]]; then\n    echo \"Date restriction active until: End of day $CURRENT_DATE\"\n    echo \"Next available date: Next business day\"\n    echo \"\"\n  fi\n  \n  QUEUE_ENABLED=\"${DEPLOYMENT_WINDOW_QUEUE:-true}\"\n  \n  if [[ \"$QUEUE_ENABLED\" == \"true\" ]]; then\n    echo \"✅ Deployment queued for next available window\"\n    echo \"\"\n    echo \"Queued deployment details:\"\n    echo \"  Queue ID: deploy-$(date +%s)\"\n    echo \"  Files: ${KIRO_CHANGED_FILES:-}\"\n    echo \"  Requested at: $CURRENT_TIMESTAMP\"\n    echo \"  Requested by: ${KIRO_USER:-unknown}\"\n    echo \"  Auto-deploy: ${DEPLOYMENT_WINDOW_AUTO_DEPLOY:-false}\"\n    echo \"\"\n    \n    echo \"🔍 AUDIT: Deployment queued due to window restriction\" >> deployment-audit.log\n    echo \"  Timestamp: $CURRENT_TIMESTAMP\" >> deployment-audit.log\n    echo \"  Block reason: $BLOCK_REASON$RESTRICT_REASON\" >> deployment-audit.log\n    echo \"  Files changed: ${KIRO_CHANGED_FILES:-}\" >> deployment-audit.log\n    echo \"\" >> deployment-audit.log\n    \n    exit 2\n  else\n    echo \"❌ Deployment queueing is disabled\"\n    echo \"Deployment BLOCKED\"\n    exit 2\n  fi\nfi\n\necho \"✅ Step 6: Deployment window is open - proceeding with deployment\"\necho \"\"\necho \"Deployment approved for:\"\necho \"  Date: $CURRENT_DATE\"\necho \"  Time: $CURRENT_TIME $TIMEZONE\"\necho \"  Files: ${KIRO_CHANGED_FILES:-}\"\necho \"\"\n\nDEPLOYMENT_COMMAND=\"${DEPLOYMENT_COMMAND:-echo 'No deployment command configured'}\"\necho \"Executing deployment...\"\neval \"$DEPLOYMENT_COMMAND\"\nDEPLOY_STATUS=$?\n\necho \"\"\nif [[ $DEPLOY_STATUS -eq 0 ]]; then\n  echo \"✅ Deployment completed successfully\"\nelse\n  echo \"❌ Deployment failed with status: $DEPLOY_STATUS\"\nfi\necho \"\"\n\necho \"📝 Step 7: Generating audit trail...\"\necho \"\"\n\necho \"🔍 AUDIT: Production deployment executed\" >> deployment-audit.log\necho \"  Timestamp: $CURRENT_TIMESTAMP\" >> deployment-audit.log\necho \"  Status: $([ $DEPLOY_STATUS -eq 0 ] && echo 'SUCCESS' || echo 'FAILED')\" >> deployment-audit.log\necho \"  Deployment window: ALLOWED (outside blocked windows and restricted dates)\" >> deployment-audit.log\necho \"  Files changed: ${KIRO_CHANGED_FILES:-}\" >> deployment-audit.log\necho \"  Executed by: ${KIRO_USER:-unknown}\" >> deployment-audit.log\necho \"  Exit code: $DEPLOY_STATUS\" >> deployment-audit.log\necho \"\" >> deployment-audit.log\n\necho \"Audit trail updated: deployment-audit.log\"\necho \"\"\necho \"Deployment window enforcement complete.\"\n\nexit $DEPLOY_STATUS"
+      }
+    }
+  ],
+  "metadata": {
+    "purpose": "Enforce time-based deployment restrictions for regulatory compliance. Prevents deployments during high-risk periods (market hours, business hours). Queues deployments for allowed windows with emergency override mechanism.",
+    "requirements": [
+      "11.2: Enforce time-based deployment restrictions and queue deployments",
+      "11.5: Include audit trail logging for deployments",
+      "11.6: Customization guide for regulatory windows",
+      "15.2: Clear customization points with inline guidance"
+    ],
+    "addresses": "Primary Concern #9: FSI Regulatory Complexity - OCC/FDIC/Fed/SEC requirements for change control",
+    "customization": {
+      "required": [
+        "Configure DEPLOYMENT_WINDOWS for your regulatory requirements (FSI market hours, Healthcare peak hours, Retail holidays, Energy peak demand)",
+        "Set TIMEZONE for deployment window evaluation (America/New_York, America/Los_Angeles, UTC, Europe/London, Asia/Tokyo)",
+        "Configure RESTRICTED_DAYS for blackout periods (quarter ends, regulatory filing deadlines, high-traffic events)",
+        "Set DEPLOYMENT_COMMAND for your deployment tool (CDK, Terraform, SAM, Serverless, kubectl, etc.)"
+      ],
+      "optional": [
+        "Emergency override mechanism: EMERGENCY_APPROVERS, EMERGENCY_NOTIFICATION, AUDIT_TRAIL_LOCATION",
+        "Deployment queuing: QUEUE_ENABLED, QUEUE_LOCATION, AUTO_DEPLOY_ON_WINDOW_OPEN",
+        "Extended restrictions: SETTLEMENT_HOURS, MAINTENANCE_WINDOWS"
+      ]
+    },
+    "environment_variables": {
+      "DEPLOYMENT_WINDOW_TIMEZONE": "Timezone for window evaluation (default: 'America/New_York')",
+      "DEPLOYMENT_WINDOW_EMERGENCY": "Set to 'true' to request emergency override",
+      "DEPLOYMENT_WINDOW_JUSTIFICATION": "Justification for emergency override",
+      "DEPLOYMENT_WINDOW_EMERGENCY_APPROVED": "Set to 'true' to approve emergency override",
+      "DEPLOYMENT_WINDOW_APPROVER": "Name of approver for emergency override",
+      "DEPLOYMENT_WINDOW_QUEUE": "Enable deployment queuing (default: 'true')",
+      "DEPLOYMENT_WINDOW_AUTO_DEPLOY": "Auto-deploy when window opens (default: 'false')",
+      "DEPLOYMENT_COMMAND": "Command to execute deployment (required)"
+    },
+    "blocked_windows_examples": {
+      "financial_services": "09:30-16:00 ET (Market trading), 16:00-18:00 ET (Settlement processing)",
+      "healthcare": "08:00-18:00 local (Peak patient care hours)",
+      "retail": "Black Friday, Cyber Monday, Holiday shopping peak (Dec 20-26)",
+      "energy": "Peak demand hours"
+    },
+    "restricted_dates_default": [
+      "2025-03-31: Q1 End - Financial reporting period",
+      "2025-06-30: Q2 End - Financial reporting period",
+      "2025-09-30: Q3 End - Financial reporting period",
+      "2025-12-31: Year End - Financial reporting and audit period",
+      "2025-04-15: Tax Day - High volume for financial services",
+      "2025-11-28: Thanksgiving - Market closed",
+      "2025-12-25: Christmas - Market closed"
+    ],
+    "workflow_integration": [
+      "promote-to-staging.json - Staging deployments can proceed during blocked windows",
+      "cascade-api-change.json - API changes trigger deployment window validation"
+    ],
+    "dora_metrics_impact": {
+      "deployment_frequency": "Controlled but optimized within allowed windows",
+      "change_failure_rate": "Reduced by avoiding high-risk deployment periods",
+      "time_to_restore": "Emergency override enables rapid incident response"
+    },
+    "compliance": [
+      "SOX 404: Audit trail of all deployments with approval gates",
+      "API documentation often required for SOC 2, ISO 27001",
+      "FSI regulations: Combine with deployment restrictions for production"
+    ],
+    "best_practices": [
+      "Align windows with organization's peak risk periods",
+      "Document business justification for each blocked window",
+      "Review and update quarterly as business needs change",
+      "Require clear justification for emergency overrides (incident ticket, P1/P2 severity)",
+      "Limit approvers to senior technical leadership",
+      "Send real-time notifications to all stakeholders",
+      "Conduct post-incident review of all emergency overrides",
+      "Set reasonable queue expiration (24-48 hours max)",
+      "Store audit trail in centralized logging system (CloudWatch, Splunk, Datadog)",
+      "Retain for regulatory period (7 years for SOX 404)"
+    ],
+    "troubleshooting": {
+      "deployment_blocked_when_should_be_open": "Verify TIMEZONE configuration, check system time, ensure KIRO_TIMESTAMP is UTC format",
+      "emergency_override_not_working": "Verify all three env vars set (EMERGENCY, JUSTIFICATION, EMERGENCY_APPROVED)",
+      "queued_deployments_not_executing": "Check auto_deploy_when_window_opens setting, verify queue hasn't expired",
+      "audit_trail_not_generated": "Verify write permissions for deployment-audit.log",
+      "timezone_conversion_errors": "Use IANA timezone names (America/New_York not EST/EDT), account for DST"
+    }
+  }
+}

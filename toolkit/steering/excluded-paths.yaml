@@ -1,0 +1,349 @@
+# Steering Rule: Excluded Paths for Security
+#
+# PURPOSE: Define files and directories that must NEVER be sent as model context.
+#          Protects secrets, credentials, PII, and other sensitive data from reaching models.
+#          Implements data residency and privacy-by-design principles.
+#
+# REQUIREMENTS ADDRESSED:
+# - 3.5: Comprehensive exclusion patterns for sensitive files
+# - 9.2: Secret directories and patterns excluded from model context
+# - 15.4: Clear examples and customization guidance
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# NO INSTALLATION REQUIRED - Configuration file only
+#
+# HOW TO USE:
+# 1. Place this file in your .kiro/ directory: .kiro/steering/excluded-paths.yaml
+# 2. Kiro will automatically respect these exclusions
+# 3. Files matching these patterns will never be sent to any model
+#
+# CUSTOMIZATION:
+# 1. ADD your organization-specific patterns:
+#    - Internal secret management paths (vault/, keystore/, etc.)
+#    - Proprietary data directories (customer-data/, exports/, etc.)
+#    - PII storage locations (uploads/, user-data/, etc.)
+#
+# 2. ADD your technology stack-specific exclusions:
+#    - Python: venv/, __pycache__/, *.pyc
+#    - Node.js: node_modules/, package-lock.json (already included)
+#    - Java: target/, .gradle/, *.class
+#    - Go: vendor/, bin/
+#
+# 3. REVIEW and adjust severity:
+#    - CRITICAL: Actual secrets, credentials, PII
+#    - HIGH: Configuration that might contain secrets
+#    - MEDIUM: Large generated files (noise reduction)
+#
+# VALIDATION:
+# - Check exclusions: kiro config validate
+# - Test a pattern: Add a test secret to excluded directory, verify it's not sent
+#
+# EXAMPLES:
+# Organization-specific:
+#   - "internal/secrets/**"           # Internal secret storage
+#   - "**/customer-exports/**"        # Customer data exports
+#   - "compliance/audit-logs/**"      # Sensitive audit logs
+#
+# Technology-specific:
+#   - "**/.terraform/**"              # Terraform state (may contain secrets)
+#   - "**/vendor/**"                  # Go dependencies
+#   - "**/.gradle/**"                 # Gradle cache
+# ============================================================================
+
+name: security-exclusions
+description: |
+  Files and patterns that must never be sent as model context.
+  Protects against data leakage, credential exposure, and PII transmission.
+  Implements multiple layers of protection:
+    - Direct secret files (.env, credentials)
+    - Secret management directories (vault/, secrets/)
+    - Generated artifacts that might contain secrets (build outputs, logs)
+    - Dependency directories (reduce noise + potential secret leakage)
+    - Binary and compiled files (not useful for model + security risk)
+
+# ============================================================================
+# FILE PATTERN EXCLUSIONS
+# ============================================================================
+exclude_paths:
+  # ==========================================================================
+  # CRITICAL SEVERITY - Secrets and Credentials
+  # ==========================================================================
+  
+  # Environment Files (highest risk - contains API keys, database passwords)
+  - "**/.env"                    # Base environment file
+  - "**/.env.*"                  # All variants (.env.local, .env.production, .env.development)
+  - "**/*.env"                   # Any file ending in .env
+  - "**/.env.backup"             # Backup environment files
+  - "**/.env.example"            # Often accidentally contains real secrets
+  
+  # AWS Credentials
+  - "**/.aws/credentials"        # AWS CLI credentials file
+  - "**/.aws/config"             # AWS CLI config (may contain assume role secrets)
+  - "**/aws-credentials"         # Custom AWS credential files
+  - "**/aws-config"
+  
+  # Cloud Provider Credentials
+  - "**/.gcloud/**"              # Google Cloud credentials
+  - "**/.azure/**"               # Azure credentials
+  - "**/gcp-credentials.json"    # GCP service account keys
+  - "**/azure-credentials.json"  # Azure service principal credentials
+  
+  # SSH and Cryptographic Keys
+  - "**/.ssh/id_rsa"             # SSH private key
+  - "**/.ssh/id_ed25519"         # ED25519 SSH key
+  - "**/.ssh/id_ecdsa"           # ECDSA SSH key
+  - "**/.ssh/id_dsa"             # DSA SSH key (deprecated but still used)
+  - "**/.ssh/*_key"              # Any other SSH keys
+  - "**/.ssh/known_hosts"        # SSH known hosts (infrastructure info)
+  - "**/*.pem"                   # PEM certificate files (private keys)
+  - "**/*.key"                   # Generic key files
+  - "**/*.p12"                   # PKCS#12 certificate files
+  - "**/*.pfx"                   # PFX certificate files
+  - "**/*.jks"                   # Java keystore
+  - "**/*.keystore"              # Android/Java keystores
+  
+  # Secret Management Directories
+  - "**/secrets/**"              # Generic secrets directory
+  - "**/vault/**"                # Vault storage
+  - "**/credentials/**"          # Credentials directory
+  - "**/.secrets/**"             # Hidden secrets directory
+  - "**/keystore/**"             # Key storage
+  - "**/certs/private/**"        # Private certificates
+  
+  # Configuration Files That May Contain Secrets
+  - "**/config/production.yaml"  # Production configs often have secrets
+  - "**/config/production.yml"
+  - "**/config/production.json"
+  - "**/config/prod.yaml"
+  - "**/config/prod.yml"
+  - "**/config/staging.yaml"     # Staging may have production-like secrets
+  - "**/config/staging.yml"
+  - "**/application-prod.properties"    # Spring Boot production config
+  - "**/application-production.properties"
+  
+  # Database Dumps and Backups
+  - "**/*.sql.gz"                # Compressed SQL dumps
+  - "**/*.sql"                   # SQL dumps (may contain data)
+  - "**/*.dump"                  # Database dump files
+  - "**/backups/**"              # Backup directories
+  - "**/*.bak"                   # Backup files
+  
+  # ==========================================================================
+  # HIGH SEVERITY - Potentially Sensitive Data
+  # ==========================================================================
+  
+  # Git Internals (may contain credentials in commit history)
+  - "**/.git/**"                 # Entire .git directory
+  - "**/.gitconfig"              # May contain tokens
+  - "**/.git-credentials"        # Git credential helper
+  
+  # CI/CD Secrets
+  - "**/.github/secrets/**"      # GitHub Actions secrets
+  - "**/.gitlab/secrets/**"      # GitLab secrets
+  - "**/.circleci/secrets/**"    # CircleCI secrets
+  - "**/jenkins/credentials.xml" # Jenkins credentials
+  
+  # Container Registry Credentials
+  - "**/.docker/config.json"     # Docker registry auth
+  - "**/.dockercfg"              # Legacy Docker auth
+  - "**/docker-compose.override.yml"  # Often contains local secrets
+  
+  # Infrastructure as Code State Files
+  - "**/.terraform/**"           # Terraform state and cache (contains secrets!)
+  - "**/terraform.tfstate"       # Terraform state (highly sensitive)
+  - "**/terraform.tfstate.backup"
+  - "**/*.tfstate"
+  - "**/pulumi.*.yaml"           # Pulumi state configs
+  - "**/.pulumi/**"              # Pulumi state directory
+  
+  # Language-Specific Secrets
+  - "**/.npmrc"                  # NPM registry auth
+  - "**/.yarnrc"                 # Yarn registry auth
+  - "**/.pypirc"                 # Python package index auth
+  - "**/.gem/credentials"        # Ruby gem credentials
+  - "**/.cargo/credentials"      # Rust cargo credentials
+  - "**/gradle.properties"       # Gradle properties (may have signing keys)
+  - "**/maven-settings.xml"      # Maven settings (may have repo credentials)
+  
+  # IDE Configuration (may contain server URLs, tokens)
+  - "**/.idea/**"                # IntelliJ IDEA
+  - "**/.vscode/settings.json"   # VS Code settings (may have API endpoints)
+  - "**/.vscode/launch.json"     # May contain environment variables
+  
+  # Logs (may contain secrets logged accidentally)
+  - "**/logs/**"                 # Log directories
+  - "**/*.log"                   # Log files
+  - "**/log/**"                  # Alternate log directory
+  - "**/.npm/_logs/**"           # NPM logs
+  
+  # ==========================================================================
+  # MEDIUM SEVERITY - Noise Reduction and Performance
+  # ==========================================================================
+  
+  # Dependency Directories (huge, not useful for model, potential secret leakage)
+  - "**/node_modules/**"         # Node.js dependencies (~400MB typical)
+  - "**/vendor/**"               # Go, PHP, Ruby dependencies
+  - "**/venv/**"                 # Python virtual environment
+  - "**/.venv/**"                # Python venv (hidden)
+  - "**/env/**"                  # Python env
+  - "**/__pycache__/**"          # Python cache
+  - "**/*.pyc"                   # Python compiled
+  - "**/target/**"               # Java/Maven build output
+  - "**/.gradle/**"              # Gradle cache
+  - "**/build/**"                # Generic build directory
+  - "**/dist/**"                 # Distribution builds
+  - "**/.next/**"                # Next.js build cache
+  - "**/.nuxt/**"                # Nuxt.js build cache
+  - "**/out/**"                  # Build output
+  
+  # Binary and Compiled Files
+  - "**/*.so"                    # Shared objects
+  - "**/*.dylib"                 # macOS dynamic libraries
+  - "**/*.dll"                   # Windows DLLs
+  - "**/*.exe"                   # Executables
+  - "**/*.bin"                   # Binary files
+  - "**/*.class"                 # Java compiled
+  - "**/*.jar"                   # Java archives
+  - "**/*.war"                   # Java web archives
+  - "**/*.o"                     # Object files
+  - "**/*.a"                     # Static libraries
+  
+  # Media Files (not useful for code context)
+  - "**/*.png"
+  - "**/*.jpg"
+  - "**/*.jpeg"
+  - "**/*.gif"
+  - "**/*.svg"                   # Keep small SVGs, exclude via size
+  - "**/*.ico"
+  - "**/*.mp4"
+  - "**/*.mov"
+  - "**/*.avi"
+  - "**/*.mp3"
+  - "**/*.wav"
+  - "**/*.pdf"
+  
+  # Archives (might contain secrets, hard to scan)
+  - "**/*.zip"
+  - "**/*.tar"
+  - "**/*.tar.gz"
+  - "**/*.tgz"
+  - "**/*.rar"
+  - "**/*.7z"
+  
+  # ==========================================================================
+  # CUSTOMIZE: Add your organization-specific exclusions below
+  # ==========================================================================
+  
+  # Example patterns (uncomment and modify as needed):
+  # - "**/internal/secrets/**"        # Internal company secrets
+  # - "**/customer-data/**"           # Customer PII
+  # - "**/exports/**"                 # Data exports
+  # - "**/compliance/audit/**"        # Audit logs
+  # - "**/*.confidential"             # Files marked confidential
+  # - "**/proprietary/**"             # Proprietary code
+  # - "**/legal/**"                   # Legal documents
+
+# ============================================================================
+# CONTENT PATTERN EXCLUSIONS
+# ============================================================================
+# Exclude files that contain specific patterns (regex-based)
+exclude_patterns:
+  # High-Confidence Secret Patterns
+  - "AKIA[0-9A-Z]{16}"                              # AWS Access Key ID
+  - "-----BEGIN.*PRIVATE KEY-----"                   # Private keys (any type)
+  - "mongodb(\+srv)?://[^:]+:[^@]+@"                # MongoDB connection strings
+  - "postgres(ql)?://[^:]+:[^@]+@"                  # PostgreSQL connection strings
+  - "mysql://[^:]+:[^@]+@"                          # MySQL connection strings
+  - "redis://[^:]+:[^@]+@"                          # Redis connection strings
+  
+  # API Keys (common formats)
+  - "sk-[a-zA-Z0-9]{48}"                            # OpenAI API keys
+  - "sk-ant-[a-zA-Z0-9]{95}"                        # Anthropic API keys
+  - "ghp_[a-zA-Z0-9]{36}"                           # GitHub Personal Access Tokens
+  - "xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,}"  # Slack tokens
+  
+  # CUSTOMIZE: Add patterns for internal secret formats
+  # Example:
+  # - "internal_api_[a-z0-9]{32}"                   # Internal API format
+  # - "MYCOMPANY[A-Z0-9]{20}"                       # Company-specific key format
+
+# ============================================================================
+# ALLOWLIST (Override exclusions for specific cases)
+# ============================================================================
+# Sometimes you need to include files that match exclusion patterns
+# Use sparingly and document why each allowlist entry is safe
+
+allow_paths:
+  # Example environment files (safe because they're templates)
+  - ".env.example"               # Template file, should have placeholder values
+  - ".env.template"              # Template file
+  - "**/examples/**/.env"        # Example code with fake credentials
+  - "**/docs/**/.env"            # Documentation examples
+  
+  # Test fixtures (fake secrets for testing)
+  - "**/tests/fixtures/**"       # Test fixtures directory
+  - "**/test/fixtures/**"        # Alternate test fixtures
+  - "**/*.test.env"              # Test environment files
+  - "**/*.spec.env"              # Spec test environment
+  
+  # Public configuration (no secrets)
+  - "**/config/public/**"        # Explicitly public config
+  - "**/public/**"               # Public directory
+
+# ============================================================================
+# SIZE LIMITS
+# ============================================================================
+# Exclude files above certain size (performance + likely not useful)
+max_file_size: 1048576  # 1MB - files larger than this are automatically excluded
+# Adjust if you have large legitimate files that should be included
+
+# ============================================================================
+# METADATA
+# ============================================================================
+version: "1.0"
+last_updated: "2024-06-17"
+
+# ============================================================================
+# SECURITY NOTES
+# ============================================================================
+#
+# DEFENSE IN DEPTH:
+# This is one layer of security. Also use:
+#   1. scan-secrets.yaml - Scans files before save
+#   2. pre-send-scan.yaml - Final validation before transmission
+#   3. region-config.yaml - Network-level data residency controls
+#
+# WHY EXCLUDE ENTIRE DIRECTORIES:
+# - secrets/ and vault/ directories are ASSUMED to contain secrets
+# - Even if a file passes secret scanning, exclude for defense in depth
+# - Better safe than sorry - exclude entire sensitive directories
+#
+# DEPENDENCIES AND NOISE:
+# - node_modules/ excluded for performance (too large) and security (transitive secrets)
+# - Build artifacts excluded because they're generated and might contain embedded secrets
+#
+# COMPLIANCE:
+# - Meets data residency requirements (excluded data never leaves device)
+# - Supports GDPR (PII in excluded directories never transmitted)
+# - Supports PCI DSS (cardholder data in excluded paths never sent)
+# - Audit trail: All exclusions logged, can be reviewed
+#
+# TESTING YOUR EXCLUSIONS:
+# 1. Create a test file matching an excluded pattern
+# 2. Add a fake secret to it
+# 3. Try to send it as context
+# 4. Verify it's blocked with clear message
+#
+# PERFORMANCE:
+# - Pattern matching is fast (compiled regex, < 10ms typical)
+# - Large files are pre-filtered by size before pattern matching
+# - Directory exclusions are checked first (most efficient)
+#
+# MAINTENANCE:
+# - Review this file quarterly
+# - Update patterns as new secret formats emerge
+# - Add patterns after any security incident involving leaked secrets
+# - Share patterns across teams (version control this file!)

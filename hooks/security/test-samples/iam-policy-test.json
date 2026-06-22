@@ -1,0 +1,82 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BadPolicy1",
+      "Effect": "Allow",
+      "Action": "*",
+      "Resource": "*",
+      "Comment": "DANGEROUS: Full wildcard - should be flagged as HIGH severity"
+    },
+    {
+      "Sid": "BadPolicy2",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": "*",
+      "Comment": "DANGEROUS: S3 wildcard without conditions - should be flagged"
+    },
+    {
+      "Sid": "BadPolicy3",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/*",
+      "Comment": "MISSING CONDITION: Write operations without conditions - should be flagged"
+    },
+    {
+      "Sid": "AcceptablePolicy1",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::my-bucket",
+        "arn:aws:s3:::my-bucket/*"
+      ],
+      "Comment": "OK: Read-only with specific resource"
+    },
+    {
+      "Sid": "AcceptablePolicy2",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": "arn:aws:s3:::my-specific-bucket/*",
+      "Condition": {
+        "IpAddress": {
+          "aws:SourceIp": "203.0.113.0/24"
+        }
+      },
+      "Comment": "OK: Wildcard but with resource constraint and IP condition"
+    },
+    {
+      "Sid": "AcceptablePolicy3",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:*:*:table/MyTable",
+      "Condition": {
+        "ForAllValues:StringEquals": {
+          "dynamodb:LeadingKeys": [
+            "${aws:username}"
+          ]
+        }
+      },
+      "Comment": "OK: Read operations with leading key condition"
+    },
+    {
+      "Sid": "ReadOnlyWildcard",
+      "Effect": "Allow",
+      "Action": [
+        "s3:Get*",
+        "s3:List*",
+        "ec2:Describe*"
+      ],
+      "Resource": "*",
+      "Comment": "LOW RISK: Read-only wildcards are generally acceptable"
+    }
+  ]
+}
