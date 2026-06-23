@@ -1,0 +1,805 @@
+# Deployment Hook: Require Approvals
+#
+# PURPOSE: Validate spec changes have required approvals before deployment.
+#          Maps to CAB (Change Advisory Board) authorization requirements.
+#          Enforces governance and regulatory compliance for controlled deployments.
+#
+# REQUIREMENTS ADDRESSED:
+# - 11.3: Validate spec changes have required approvals before deployment
+# - 11.4: Map to CAB (Change Advisory Board) authorization
+# - 11.6: Include customization guide for approval requirements
+# - 15.2: Clear customization points with inline guidance
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# NO INSTALLATION REQUIRED - Uses model-assisted analysis of approval metadata
+#
+# REQUIRED CHANGES:
+# 1. Define APPROVAL_LEVELS for your organization:
+#    - Level 1 (Low Risk): Single approver, any team member
+#    - Level 2 (Medium Risk): Two approvers, one must be tech lead
+#    - Level 3 (High Risk): Three approvers including: tech lead + manager + security
+#    - Level 4 (Critical): CAB approval required (change board meeting)
+#
+# 2. Set APPROVAL_METADATA_LOCATION:
+#    - In spec frontmatter: YAML header with `approvers:` field
+#    - In separate file: .approvals.yaml, APPROVALS.md
+#    - In git metadata: Approved-by: tags in commit messages
+#    - In PR metadata: GitHub/GitLab approval data via API
+#
+# 3. Configure RISK_CLASSIFICATION rules:
+#    - Infrastructure changes: Classify by resource type (database = high, config = low)
+#    - Code changes: Classify by scope (single service = low, multi-service = high)
+#    - Security changes: Always high risk
+#    - Data migrations: Always high risk
+#
+# 4. Set APPROVER_REGISTRY location:
+#    - CODEOWNERS file: GitHub CODEOWNERS format
+#    - approvers.yaml: Custom registry with roles and permissions
+#    - LDAP/Active Directory: Query org directory for approvers
+#    - Git log: Extract from commit history (Approved-by: tags)
+#
+# OPTIONAL CHANGES:
+# 5. Emergency override mechanism:
+#    - Allow emergency deployments with justification
+#    - Require post-incident review for overrides
+#    - Log all overrides for audit trail
+#
+# 6. Approval expiration:
+#    - Set time limit for approvals (e.g., 30 days)
+#    - Require re-approval if spec changes after approval
+#    - Track approval freshness
+#
+# 7. Notification settings:
+#    - Notify approvers when approval needed
+#    - Notify requester when approval granted/denied
+#    - Escalation for pending approvals
+#
+# VALIDATION:
+# - Create spec with approval metadata
+# - Attempt deployment without approvals (should block)
+# - Add approvals and attempt deployment (should proceed)
+# - Test emergency override mechanism
+# - Verify audit trail is created
+#
+# EXAMPLES BY APPROVAL SYSTEM:
+#
+# Example 1: Spec Frontmatter Approvals
+# ```yaml
+# ---
+# title: Payment Processor Service
+# approvers:
+#   - name: Alice Johnson
+#     role: Tech Lead
+#     approved_at: 2025-01-15T10:30:00Z
+#   - name: Bob Smith
+#     role: Security Engineer
+#     approved_at: 2025-01-15T11:45:00Z
+# approval_level: high_risk
+# ---
+# ```
+#
+# Example 2: GitHub PR Approvals
+# Query GitHub API for PR approval status:
+# - Require 2 approvals from CODEOWNERS
+# - Block merging until approved
+# - This hook validates before deployment (post-merge gate)
+#
+# Example 3: CAB Meeting Record
+# ```markdown
+# # Change Advisory Board Meeting - 2025-01-15
+#
+# ## Approved Changes
+# - Payment Processor Infrastructure Update
+#   - Requester: Alice Johnson
+#   - Risk Level: High
+#   - Approved by: CAB Members (5/5)
+#   - Deployment Window: 2025-01-20 22:00-23:00 UTC
+# ```
+#
+# Example 4: Git Commit Metadata
+# ```
+# commit abc123def456
+# Author: Alice Johnson <alice@example.com>
+# Date: 2025-01-15
+#
+#     Update payment processor spec
+#
+#     Approved-by: Bob Smith <bob@example.com>
+#     Approved-by: Carol White <carol@example.com>
+#     Change-ID: CHG0001234
+#     Risk-Level: High
+# ```
+# ============================================================================
+
+name: require-approvals
+description: |
+  Validate spec changes have required approvals before deployment.
+  Maps approval metadata to CAB (Change Advisory Board) authorization.
+  
+  Key benefits:
+  - Enforces approval gates for controlled deployments
+  - Maps to regulatory change control requirements (SOX, FSI)
+  - Provides audit trail for compliance
+  - Prevents unauthorized production changes
+  - Supports emergency override with justification
+  
+  Addresses Primary Concern #9: FSI Regulatory Complexity
+  - OCC/FDIC/Fed/SEC require change authorization
+  - CAB-equivalent approval gates satisfy compliance
+  - Audit trail demonstrates due diligence
+  
+  DORA Metrics Impact:
+  - Maintains velocity while ensuring governance
+  - Approval automation reduces manual coordination
+  - Clear approval paths reduce deployment delays
+  - Audit trail supports compliance without slowing teams
+
+on:
+  # Trigger before deployment operations
+  # CUSTOMIZE: Adjust to match your deployment trigger events
+  fileEdited:
+    paths:
+      # Spec files that may trigger deployments
+      - ".kiro/specs/**/*.md"
+      - "specs/**/*.md"
+      - "docs/specs/**/*.md"
+      - "design/**/*.md"
+      
+      # Infrastructure files requiring approval
+      - "infra/**/*"
+      - "infrastructure/**/*"
+      - "terraform/**/*.tf"
+      - "k8s/**/*.yaml"
+      - "k8s/**/*.yml"
+      - "cdk/**/*.ts"
+      - "cloudformation/**/*.yaml"
+      - "cloudformation/**/*.yml"
+      
+      # Configuration files requiring approval
+      - "config/production.yaml"
+      - "config/prod.yaml"
+      - ".env.production"
+      - "**/prod.config.js"
+
+run:
+  # Model-assisted approval validation
+  # Analyzes approval metadata and validates against requirements
+  agent: sonnet
+  task: |
+    You are an approval validation assistant for deployment gate enforcement.
+    
+    Your task: Validate that required approvals are present before allowing deployment.
+    
+    # Context
+    Changed files: ${KIRO_CHANGED_FILES:-<none>}
+    Deployment target: ${DEPLOYMENT_TARGET:-production}
+    
+    # Approval Validation Workflow
+    
+    1. **Risk Classification**:
+       Analyze changed files to determine risk level:
+       
+       LOW RISK (Level 1: Single approver):
+       - Documentation updates only
+       - Non-production environment changes
+       - Configuration changes (non-security, non-data)
+       - Code comments or formatting
+       - Test file updates
+       
+       MEDIUM RISK (Level 2: Two approvers, one tech lead):
+       - Single service code changes
+       - Non-breaking API changes
+       - Infrastructure scaling (no architecture change)
+       - Dependency updates (patch versions)
+       - Feature flag changes
+       
+       HIGH RISK (Level 3: Three approvers including security):
+       - Multi-service changes
+       - Database schema migrations
+       - Breaking API changes
+       - Security-related changes (auth, encryption, IAM)
+       - Infrastructure architecture changes
+       - New external integrations
+       - Data retention policy changes
+       
+       CRITICAL RISK (Level 4: CAB approval required):
+       - Production database changes (DROP, ALTER with data loss)
+       - Major version upgrades (framework, language, database)
+       - Network topology changes
+       - Disaster recovery procedure changes
+       - Compliance-related changes (audit, logging, data handling)
+       - Service deletions or deprecations
+       
+       Output risk classification:
+       ```
+       Risk Classification: <LOW | MEDIUM | HIGH | CRITICAL>
+       Rationale: <Why this risk level>
+       Required Approval Level: <1 | 2 | 3 | 4>
+       ```
+    
+    2. **Extract Approval Metadata**:
+       Look for approval records in multiple locations:
+       
+       A. Spec File Frontmatter (YAML header):
+       ```yaml
+       ---
+       title: Service Name
+       approvers:
+         - name: Alice Johnson
+           role: Tech Lead
+           email: alice@example.com
+           approved_at: 2025-01-15T10:30:00Z
+           signature: alice@example.com
+         - name: Bob Smith
+           role: Security Engineer
+           approved_at: 2025-01-15T11:45:00Z
+       approval_level: high_risk
+       change_id: CHG0001234
+       ---
+       ```
+       
+       B. Separate Approval File (.approvals.yaml, APPROVALS.md):
+       ```yaml
+       change_id: CHG0001234
+       spec_file: specs/payment-processor.spec.md
+       risk_level: high
+       approvers:
+         - alice@example.com (Tech Lead) - Approved 2025-01-15
+         - bob@example.com (Security) - Approved 2025-01-15
+         - carol@example.com (Manager) - Approved 2025-01-16
+       ```
+       
+       C. Git Commit Metadata:
+       ```
+       git log --format=fuller --all --grep="Approved-by"
+       
+       Approved-by: Alice Johnson <alice@example.com>
+       Approved-by: Bob Smith <bob@example.com>
+       Change-ID: CHG0001234
+       ```
+       
+       D. GitHub/GitLab PR Approvals (via API):
+       - Check PR approval status
+       - Verify approvers have required permissions
+       - Check approval is not stale (re-approval after changes)
+       
+       If no approvals found:
+       "❌ No approval metadata found. Add approval records to spec frontmatter, 
+       .approvals.yaml, or git commit metadata."
+    
+    3. **Validate Approvers**:
+       Check each approver against registry:
+       
+       A. Load Approver Registry:
+       - CODEOWNERS file: GitHub format, maps paths to approvers
+       - approvers.yaml: Custom registry with roles
+       - Git log: Historical approvers
+       - LDAP/Active Directory: Query org directory
+       
+       B. Verify Approver Authority:
+       For each approver, check:
+       - Is this person in the approver registry?
+       - Do they have the required role? (tech lead, manager, security)
+       - Are they authorized for this risk level?
+       - Is their approval still valid (not expired)?
+       
+       Example CODEOWNERS format:
+       ```
+       # Code Owners for Approval Authority
+       
+       # Default owners (Level 1-2)
+       * @alice @bob
+       
+       # Infrastructure (Level 3 required)
+       /infra/ @alice @security-team
+       /terraform/ @alice @security-team
+       
+       # Production configs (Level 3 required)
+       /config/production.yaml @alice @bob @manager
+       
+       # Database migrations (Level 4 - CAB required)
+       /migrations/ @cab-board
+       ```
+       
+       Example approvers.yaml format:
+       ```yaml
+       approvers:
+         - email: alice@example.com
+           name: Alice Johnson
+           role: Tech Lead
+           approval_levels: [1, 2, 3]
+           teams: [backend, infrastructure]
+         
+         - email: bob@example.com
+           name: Bob Smith
+           role: Security Engineer
+           approval_levels: [2, 3, 4]
+           teams: [security, compliance]
+         
+         - email: manager@example.com
+           name: Carol White
+           role: Engineering Manager
+           approval_levels: [3, 4]
+           teams: [backend, frontend, infrastructure]
+       
+       cab_board:
+         - alice@example.com
+         - bob@example.com
+         - manager@example.com
+         - cto@example.com
+         - security-lead@example.com
+       ```
+
+       
+       C. Validate Approval Count:
+       Match actual approvers to required count:
+       - Level 1: 1 approver
+       - Level 2: 2 approvers (1 must be tech lead)
+       - Level 3: 3 approvers (tech lead + manager + security)
+       - Level 4: CAB board approval (majority vote)
+       
+       If validation fails:
+       "❌ Insufficient approvers. Required: <count> with roles <roles>. 
+       Found: <actual_count> approvers."
+    
+    4. **Match Approvals to Requirements**:
+       Verify approval metadata meets risk level requirements:
+       
+       For Level 1 (Low Risk):
+       - ✅ At least 1 approver with any role
+       
+       For Level 2 (Medium Risk):
+       - ✅ At least 2 approvers
+       - ✅ At least 1 approver with "Tech Lead" or higher role
+       
+       For Level 3 (High Risk):
+       - ✅ At least 3 approvers
+       - ✅ Must include: Tech Lead (or Senior Engineer)
+       - ✅ Must include: Manager (or Director)
+       - ✅ Must include: Security Engineer
+       
+       For Level 4 (Critical Risk):
+       - ✅ CAB board meeting approval required
+       - ✅ Majority vote from CAB members (3 of 5 minimum)
+       - ✅ Meeting record with change ID
+       - ✅ Approved deployment window specified
+       
+       If requirements not met:
+       ```
+       ❌ Approval Requirements Not Met
+       
+       Risk Level: HIGH RISK (Level 3)
+       Required: 3 approvers (Tech Lead + Manager + Security)
+       
+       Found: 2 approvers
+       - alice@example.com (Tech Lead) ✅
+       - bob@example.com (Engineer) ❌ Not sufficient role
+       
+       Missing: 1 Manager approval, 1 Security approval
+       
+       Action Required: Add approvals from:
+       - Manager: carol@example.com, manager@example.com
+       - Security: security@example.com, bob-security@example.com
+       ```
+    
+    5. **Check Approval Freshness**:
+       Verify approvals are not stale:
+       
+       A. Check Approval Timestamp:
+       - Approval must be within APPROVAL_VALIDITY_DAYS (default: 30 days)
+       - If older, require re-approval
+       
+       B. Check for Changes After Approval:
+       - Get timestamp of last spec modification
+       - Compare to approval timestamp
+       - If spec changed after approval, require re-approval
+       
+       C. Emergency Override Check:
+       - If EMERGENCY_OVERRIDE=true, allow stale approvals
+       - Require justification in OVERRIDE_REASON
+       - Log override for post-incident review
+       
+       Example freshness check:
+       ```
+       Approval Freshness Check:
+       - alice@example.com: Approved 2025-01-15 (15 days ago) ✅
+       - bob@example.com: Approved 2025-01-10 (20 days ago) ✅
+       - Spec last modified: 2025-01-16 (14 days ago)
+       
+       ⚠️  WARNING: Spec was modified AFTER bob@example.com approval
+       Bob's approval may be stale. Consider re-approval.
+       ```
+    
+    6. **Emergency Override Handling**:
+       Support emergency deployments with proper controls:
+       
+       Check for emergency override flag:
+       - Environment variable: EMERGENCY_OVERRIDE=true
+       - Spec metadata: `emergency: true`
+       - Git commit message: "EMERGENCY:" prefix
+       
+       If emergency override detected:
+       ```
+       🚨 EMERGENCY OVERRIDE DETECTED
+       
+       Override Reason: ${OVERRIDE_REASON}
+       Override Authorized By: ${OVERRIDE_APPROVER}
+       Incident Ticket: ${INCIDENT_TICKET}
+       
+       ⚠️  WARNING: Bypassing normal approval gates
+       
+       Post-Deployment Requirements:
+       1. Create incident report within 24 hours
+       2. Conduct post-incident review within 1 week
+       3. Update approval metadata retroactively
+       4. Document lessons learned
+       
+       This override will be logged for audit review.
+       ```
+       
+       Log override to audit trail:
+       - Timestamp of override
+       - Reason provided
+       - Who authorized override
+       - Incident ticket reference
+       - Files affected
+       - Deployment outcome
+    
+    7. **Generate Validation Report**:
+       Produce final approval validation report:
+       
+       SUCCESS CASE:
+       ```
+       ✅ APPROVAL VALIDATION PASSED
+       
+       Risk Classification: HIGH RISK (Level 3)
+       
+       Required Approvals: 3 approvers (Tech Lead + Manager + Security)
+       
+       Approvers Found:
+       1. Alice Johnson <alice@example.com>
+          Role: Tech Lead
+          Approved: 2025-01-15T10:30:00Z (15 days ago)
+          Authority: Level 3 ✅
+       
+       2. Carol White <manager@example.com>
+          Role: Engineering Manager
+          Approved: 2025-01-16T09:00:00Z (14 days ago)
+          Authority: Level 3 ✅
+       
+       3. Bob Smith <bob@example.com>
+          Role: Security Engineer
+          Approved: 2025-01-15T11:45:00Z (15 days ago)
+          Authority: Level 3 ✅
+       
+       Freshness: All approvals current ✅
+       Spec Last Modified: 2025-01-16T08:00:00Z
+       
+       Change Control ID: CHG0001234
+       Deployment Window: Any time
+       
+       PROCEED WITH DEPLOYMENT ✅
+       ```
+       
+       FAILURE CASE:
+       ```
+       ❌ APPROVAL VALIDATION FAILED
+       
+       Risk Classification: HIGH RISK (Level 3)
+       
+       Required Approvals: 3 approvers (Tech Lead + Manager + Security)
+       
+       Approvers Found: 2
+       1. Alice Johnson <alice@example.com> (Tech Lead) ✅
+       2. Bob Smith <bob@example.com> (Engineer) ⚠️  Insufficient role
+       
+       Missing Approvals:
+       - 1 Manager approval required
+       - 1 Security approval required
+       
+       Recommended Approvers:
+       - Manager: carol@example.com, manager@example.com
+       - Security: security@example.com, bob-security@example.com
+       
+       DEPLOYMENT BLOCKED ❌
+       
+       Action Required:
+       1. Add required approvals to spec frontmatter:
+          ```yaml
+          approvers:
+            - name: Carol White
+              role: Manager
+              email: manager@example.com
+              approved_at: <timestamp>
+          ```
+       
+       2. Or create .approvals.yaml file with approval records
+       
+       3. Or add git commit metadata:
+          Approved-by: Carol White <manager@example.com>
+       
+       4. Re-run deployment after approvals added
+       ```
+    
+    # Execution Flow Context
+    
+    You will receive:
+    - List of changed files from ${KIRO_CHANGED_FILES}
+    - Deployment target from ${DEPLOYMENT_TARGET}
+    - Emergency override flags if present
+    
+    Read these files to gather approval metadata:
+    1. Check spec file frontmatter (YAML header)
+    2. Look for .approvals.yaml or APPROVALS.md
+    3. Check git log for Approved-by metadata
+    4. Query CODEOWNERS file for authorized approvers
+    5. Load approvers.yaml if present
+    
+    Generate the validation report and provide:
+    - ✅ PASS recommendation if all requirements met
+    - ❌ FAIL recommendation with specific missing approvals
+    - 🚨 EMERGENCY override log if emergency deployment
+    
+    Always provide actionable next steps for the developer.
+
+approval: pr_review
+
+on_failure: block_send
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+# Environment Variables (CUSTOMIZE for your organization):
+#
+# APPROVAL_VALIDITY_DAYS=30
+#   How long approvals remain valid before requiring re-approval
+#   Default: 30 days
+#
+# EMERGENCY_OVERRIDE=false
+#   Enable emergency deployment bypass (requires justification)
+#   Default: false
+#
+# OVERRIDE_REASON=""
+#   Required justification text for emergency overrides
+#   Example: "Production outage - immediate fix required"
+#
+# OVERRIDE_APPROVER=""
+#   Who authorized the emergency override
+#   Example: "oncall-engineer@example.com"
+#
+# INCIDENT_TICKET=""
+#   Reference to incident tracking ticket
+#   Example: "INC-2025-001234"
+#
+# APPROVER_REGISTRY_FILE="CODEOWNERS"
+#   Location of approver registry
+#   Options: CODEOWNERS, approvers.yaml, .approvers.yml
+#
+# CAB_MEETING_RECORDS_PATH="docs/cab-meetings/"
+#   Path to CAB meeting records for Level 4 approvals
+#   Default: docs/cab-meetings/
+#
+# DEPLOYMENT_TARGET="production"
+#   Target environment for deployment
+#   Options: development, staging, production
+#   Higher risk for production deployments
+#
+# STRICT_MODE=true
+#   Require exact role matches (true) or allow senior roles (false)
+#   Default: true
+#   Example: If false, "Senior Engineer" can substitute for "Tech Lead"
+
+# ============================================================================
+# SAFETY GUARDRAILS
+# ============================================================================
+#
+# This hook implements multiple safety layers:
+#
+# 1. Risk-Based Approval Levels:
+#    - Low risk changes require minimal approval
+#    - Critical changes require CAB-level approval
+#    - Prevents over-bureaucracy while maintaining control
+#
+# 2. Multi-Source Approval Verification:
+#    - Checks spec files, git metadata, PR approvals
+#    - Redundant verification reduces bypass risk
+#
+# 3. Freshness Validation:
+#    - Rejects stale approvals
+#    - Detects changes after approval
+#    - Prevents approval-then-modify attacks
+#
+# 4. Authority Verification:
+#    - Validates approver roles and permissions
+#    - Checks against authoritative registry
+#    - Prevents unauthorized approvals
+#
+# 5. Emergency Override Controls:
+#    - Allows emergency deployments when needed
+#    - Requires justification and incident tracking
+#    - Creates audit trail for compliance review
+#    - Triggers post-incident review process
+#
+# 6. Audit Trail:
+#    - Logs all approval checks
+#    - Records emergency overrides
+#    - Provides compliance evidence
+#    - Supports forensic investigation
+
+# ============================================================================
+# ERROR HANDLING
+# ============================================================================
+#
+# Common Issues and Resolutions:
+#
+# Issue: "No approval metadata found"
+# Resolution: Add approvers to spec frontmatter:
+#   ---
+#   approvers:
+#     - name: Your Name
+#       role: Tech Lead
+#       approved_at: 2025-01-20T10:00:00Z
+#   ---
+#
+# Issue: "Insufficient approvers for risk level"
+# Resolution: Add more approvers with required roles
+#   Check CODEOWNERS or approvers.yaml for authorized approvers
+#   Contact approvers listed in validation output
+#
+# Issue: "Approval is stale - spec modified after approval"
+# Resolution: Get re-approval after changes
+#   Update approved_at timestamp
+#   Or use git commit metadata with new Approved-by tags
+#
+# Issue: "Approver not in registry"
+# Resolution: Verify approver email matches registry
+#   Check CODEOWNERS file
+#   Check approvers.yaml
+#   Contact registry maintainer if person should be added
+#
+# Issue: "CAB approval required but not found"
+# Resolution: Schedule CAB meeting
+#   Get change approved by CAB board
+#   Document approval in CAB meeting records
+#   Add change ID and meeting reference to spec
+
+# ============================================================================
+# OUTPUT FORMAT
+# ============================================================================
+#
+# The hook outputs structured validation results:
+#
+# Exit Code 0 (Success - Deployment Allowed):
+#   - All approval requirements met
+#   - Or emergency override properly documented
+#
+# Exit Code 1 (Failure - Deployment Blocked):
+#   - Missing required approvals
+#   - Stale approvals detected
+#   - Invalid approver credentials
+#
+# Output includes:
+#   - Risk classification and rationale
+#   - Required vs actual approvals comparison
+#   - Specific missing approvals with recommended approvers
+#   - Freshness check results
+#   - Emergency override details if applicable
+#   - Actionable next steps for developer
+
+# ============================================================================
+# INTEGRATION WITH OTHER HOOKS
+# ============================================================================
+#
+# This hook works with:
+#
+# - security-scan.yaml: Security checks complement approval validation
+#   Approval ensures human oversight of security-sensitive changes
+#
+# - cascade-api-change.yaml: API changes may require approval
+#   Breaking changes typically classified as HIGH or CRITICAL risk
+#
+# - promote-to-staging.yaml: Approvals for staging promotions
+#   May use lower approval levels than production
+#
+# - policy-compliance-check.yaml: Validates approval against policies
+#   Complementary check ensuring approval process followed correctly
+#
+# Execution Order Recommendation:
+#   1. security-scan.yaml (technical validation first)
+#   2. require-approvals.yaml (human approval gate)
+#   3. policy-compliance-check.yaml (policy validation)
+#   4. cascade-api-change.yaml (notification)
+#   5. promote-to-staging.yaml (environment promotion)
+
+# ============================================================================
+# COMPLIANCE MAPPING
+# ============================================================================
+#
+# This hook helps satisfy regulatory requirements:
+#
+# SOX (Sarbanes-Oxley):
+#   - Section 404: Internal controls over financial reporting
+#   - Approval gates demonstrate separation of duties
+#   - Audit trail provides evidence of control effectiveness
+#
+# PCI-DSS (Payment Card Industry):
+#   - Requirement 6.4.5: Change authorization
+#   - Requirement 10: Audit trails for changes
+#   - Critical changes require documented approval
+#
+# HIPAA (Health Insurance Portability):
+#   - Security Rule: Access controls for PHI systems
+#   - Approval for changes to PHI handling systems
+#   - Audit trail for compliance demonstration
+#
+# OCC/FDIC/Fed (Banking Regulators):
+#   - Change control requirements for financial institutions
+#   - CAB-equivalent approval for critical systems
+#   - Documented approval authority
+#
+# SEC (Securities and Exchange Commission):
+#   - Reg SCI: Change management for market systems
+#   - Approval and testing before production deployment
+#   - Audit trail for regulatory examination
+#
+# GDPR (General Data Protection Regulation):
+#   - Article 32: Security of processing
+#   - Approval for changes to data processing systems
+#   - Records of processing activities (audit trail)
+#
+# DORA (Digital Operational Resilience Act):
+#   - Change management requirements for EU financial entities
+#   - ICT change approval and testing
+#   - Risk-based change control
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+#
+# Debug Mode:
+#   Set DEBUG=true to see detailed validation steps
+#   Outputs: risk calculation details, approval extraction process,
+#            approver validation steps, freshness checks
+#
+# Approval Not Detected:
+#   1. Check spec file has YAML frontmatter (--- delimiters)
+#   2. Verify approvers field is properly formatted
+#   3. Check .approvals.yaml exists and is valid YAML
+#   4. Run: git log --format=fuller --grep="Approved-by"
+#      to see git metadata approvals
+#
+# Wrong Risk Level:
+#   1. Review risk classification rules in step 1
+#   2. Check if file paths match expected patterns
+#   3. Consider if classification should be overridden with
+#      spec metadata: risk_level: high
+#
+# Approver Authority Issues:
+#   1. Check CODEOWNERS file syntax
+#   2. Verify approvers.yaml structure matches example
+#   3. Ensure approver email matches exactly (case-sensitive)
+#   4. Check approval_levels array includes required level
+#
+# Emergency Override Not Working:
+#   1. Verify EMERGENCY_OVERRIDE=true is set
+#   2. Ensure OVERRIDE_REASON is provided (required)
+#   3. Check OVERRIDE_APPROVER is set
+#   4. Verify INCIDENT_TICKET is provided for audit trail
+
+# ============================================================================
+# CHANGELOG
+# ============================================================================
+#
+# Version 1.0.0 (2025-01-20):
+#   - Initial implementation
+#   - Four-level risk classification system
+#   - Multi-source approval verification
+#   - Freshness validation
+#   - Emergency override mechanism
+#   - Comprehensive audit trail
+#   - CAB approval mapping
+#   - Regulatory compliance documentation

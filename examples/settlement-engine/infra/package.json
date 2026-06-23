@@ -1,0 +1,34 @@
+{
+  "name": "settlement-engine-infra",
+  "version": "1.0.0",
+  "description": "Infrastructure for Settlement Engine - Financial settlement processing with regulatory compliance",
+  "bin": {
+    "settlement-engine-infra": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk",
+    "synth": "cdk synth",
+    "deploy": "cdk deploy",
+    "diff": "cdk diff",
+    "destroy": "cdk destroy"
+  },
+  "keywords": [
+    "aws-cdk",
+    "settlement",
+    "financial-services",
+    "regulatory-compliance",
+    "sox-compliance"
+  ],
+  "devDependencies": {
+    "@types/node": "20.14.9",
+    "aws-cdk": "2.147.0",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.5.3"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.147.0",
+    "constructs": "^10.3.0"
+  }
+}

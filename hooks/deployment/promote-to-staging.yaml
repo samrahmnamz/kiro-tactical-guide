@@ -1,0 +1,697 @@
+# Deployment Hook: Promote to Staging
+#
+# PURPOSE: Auto-deploy to staging environment when spec is approved.
+#          Reduces deployment velocity gap by eliminating manual deployment steps.
+#          Enforces spec-first workflow with approval gates for quality assurance.
+#
+# REQUIREMENTS ADDRESSED:
+# - 6.2: Auto-deploy to staging when spec is approved
+# - 6.5: Configure safe auto-deployment (diff validation, destructive change detection)
+# - 15.2: Clear customization points with examples
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Set DEPLOYMENT_COMMAND for your deployment tool:
+#    - AWS CDK:           cd infra && cdk deploy --require-approval never
+#    - AWS SAM:           sam deploy --no-confirm-changeset
+#    - Terraform:         terraform apply -auto-approve
+#    - Serverless:        serverless deploy --stage staging
+#    - kubectl:           kubectl apply -f k8s/staging/
+#    - AWS CodeDeploy:    aws deploy create-deployment --application-name MyApp
+#    - Docker Compose:    docker-compose -f docker-compose.staging.yml up -d
+#    - Custom script:     ./scripts/deploy-staging.sh
+#
+# 2. Set STAGING_ENVIRONMENT identifier:
+#    - AWS account/region: "staging-account" or "us-west-2"
+#    - Kubernetes namespace: "staging"
+#    - Environment variable: "ENVIRONMENT=staging"
+#
+# 3. Set SPEC_DIRECTORY to your specs location:
+#    - Default: ".kiro/specs/"
+#    - Custom: "specs/", "docs/specs/", "design/"
+#
+# OPTIONAL CHANGES:
+# 4. Destructive change detection:
+#    - DETECT_DESTRUCTIVE: true (default) - Warn on database drops, data deletion
+#    - Set patterns in DESTRUCTIVE_PATTERNS section below
+#
+# 5. Diff validation:
+#    - SHOW_DIFF: true (default) - Display infrastructure changes before deploy
+#    - DIFF_COMMAND: Command to show deployment diff (cdk diff, terraform plan)
+#
+# 6. Pre-deployment checks:
+#    - RUN_TESTS: true - Run tests before deployment
+#    - TEST_COMMAND: Command to run pre-deployment tests
+#
+# 7. Deployment approval:
+#    - approval: pr_review (default) - Human review required before deploy
+#    - approval: none - Fully automated (use with caution)
+#
+# 8. Notification settings:
+#    - NOTIFY_SLACK: Slack webhook for deployment notifications
+#    - NOTIFY_EMAIL: Email for deployment status
+#
+# VALIDATION:
+# - Test spec approval workflow: approve a spec and verify deployment triggers
+# - Verify DEPLOYMENT_COMMAND works manually first
+# - Test destructive change detection with known patterns
+# - Validate rollback procedure works
+#
+# EXAMPLES BY DEPLOYMENT TYPE:
+#
+# Example 1: AWS CDK with Account-specific Staging
+# DEPLOYMENT_COMMAND="cd infra && cdk deploy --require-approval never --context env=staging"
+# STAGING_ENVIRONMENT="123456789012" # AWS Account ID
+# DIFF_COMMAND="cd infra && cdk diff --context env=staging"
+#
+# Example 2: Serverless Framework
+# DEPLOYMENT_COMMAND="serverless deploy --stage staging --region us-west-2"
+# STAGING_ENVIRONMENT="staging"
+# DIFF_COMMAND="serverless package --stage staging"
+#
+# Example 3: Kubernetes with kubectl
+# DEPLOYMENT_COMMAND="kubectl apply -f k8s/staging/ --namespace=staging"
+# STAGING_ENVIRONMENT="staging"
+# DIFF_COMMAND="kubectl diff -f k8s/staging/ --namespace=staging"
+#
+# Example 4: Terraform with Workspace
+# DEPLOYMENT_COMMAND="cd terraform && terraform workspace select staging && terraform apply -auto-approve"
+# STAGING_ENVIRONMENT="staging"
+# DIFF_COMMAND="cd terraform && terraform workspace select staging && terraform plan"
+#
+# Example 5: Custom Deployment Script
+# DEPLOYMENT_COMMAND="./scripts/deploy.sh --env staging --auto-approve"
+# STAGING_ENVIRONMENT="staging"
+# DIFF_COMMAND="./scripts/deploy.sh --env staging --dry-run"
+#
+# ============================================================================
+
+name: promote-to-staging
+description: |
+  Auto-deploy to staging environment when spec is approved.
+  Validates deployment safety before executing (diff review, destructive change detection).
+  Requires human approval (PR review) as final gate.
+  
+  Key benefits:
+  - Automatic staging deployment (eliminates manual steps)
+  - Fast feedback on infrastructure changes (staging before prod)
+  - Spec-driven deployment (approval gates ensure quality)
+  - Destructive change protection (warns on risky operations)
+  
+  Addresses Primary Concern #4: Deployment Velocity Gap
+  - 77% of teams wait for others before shipping
+  - Only 29% can deploy on demand
+  - Solution: Automated promotion with approval gates
+  
+  DORA Metrics Impact:
+  - Deployment Frequency: Enable on-demand staging deployments
+  - Lead Time: Reduce time from spec approval to staging validation
+  - Change Failure Rate: Diff validation catches issues before production
+
+on:
+  # Trigger when spec files are approved
+  # CUSTOMIZE: Adjust spec file patterns to match your repository
+  fileEdited:
+    paths:
+      # Spec files that trigger deployment
+      - ".kiro/specs/**/*.md"
+      - "specs/**/*.md"
+      - "docs/specs/**/*.md"
+      - "design/**/*.md"
+      
+      # Infrastructure files that trigger deployment
+      - "infra/**/*"
+      - "infrastructure/**/*"
+      - "terraform/**/*.tf"
+      - "k8s/**/*.yaml"
+      - "k8s/**/*.yml"
+      - "cdk/**/*.ts"
+      - "cloudformation/**/*.yaml"
+      - "cloudformation/**/*.yml"
+
+run:
+  # Model-assisted deployment with human approval gate
+  # Sends context to model for analysis and deployment planning
+  agent: sonnet
+  task: |
+    You are a deployment automation assistant for staging environment promotion.
+    
+    Your task: Analyze the approved spec changes and deploy to staging environment.
+    
+    # Context
+    Changed files: ${KIRO_CHANGED_FILES:-<none>}
+    Spec status: Approved (ready for staging deployment)
+    Environment: Staging
+    
+    # Deployment Workflow
+    
+    1. **Spec Analysis**:
+       - Identify what changed in the spec (new features, constraint updates, contract changes)
+       - Determine deployment scope (infrastructure, application code, configuration)
+       - Check for breaking changes or backward incompatibility
+    
+    2. **Destructive Change Detection**:
+       Scan for potentially destructive operations:
+       - Database schema changes (DROP TABLE, DROP COLUMN, ALTER TABLE with data loss)
+       - Data deletion operations (TRUNCATE, DELETE FROM)
+       - Resource deletions (DynamoDB table delete, S3 bucket delete)
+       - Service interruptions (instance replacements, network changes)
+       
+       If detected, clearly warn: "⚠️ DESTRUCTIVE CHANGE DETECTED" with specifics.
+    
+    3. **Deployment Diff Validation**:
+       - Run diff/plan command to show infrastructure changes
+       - Display: resources to create, update, delete
+       - Highlight: risky changes requiring attention
+       - Estimate: deployment time and potential downtime
+    
+    4. **Pre-Deployment Checks**:
+       - Verify deployment command is available and configured
+       - Check staging environment credentials and access
+       - Validate spec approval status
+       - Confirm no active incidents in staging (if monitoring available)
+    
+    5. **Deployment Execution**:
+       - Execute deployment command for staging environment
+       - Monitor deployment progress
+       - Capture deployment logs and output
+       - Verify deployment success
+    
+    6. **Post-Deployment Validation**:
+       - Run smoke tests against staging (if configured)
+       - Verify service health endpoints
+       - Check for deployment errors or warnings
+       - Confirm deployment matches spec expectations
+    
+    7. **Deployment Report**:
+       Generate summary:
+       - ✅ Deployment status (success/failure)
+       - 📊 Resources deployed (created, updated, deleted counts)
+       - ⏱️  Deployment duration
+       - 🔗 Staging URLs for validation
+       - ⚠️  Warnings or issues encountered
+       - 📝 Next steps (manual validation items, prod promotion readiness)
+    
+    # Configuration
+    
+    DEPLOYMENT_COMMAND: "${DEPLOYMENT_COMMAND:-cd infra && cdk deploy --require-approval never --context env=staging}"
+    STAGING_ENVIRONMENT: "${STAGING_ENVIRONMENT:-staging}"
+    DIFF_COMMAND: "${DIFF_COMMAND:-cd infra && cdk diff --context env=staging}"
+    
+    DETECT_DESTRUCTIVE: "${DETECT_DESTRUCTIVE:-true}"
+    DESTRUCTIVE_PATTERNS:
+      - "DROP TABLE"
+      - "DROP COLUMN"
+      - "TRUNCATE"
+      - "DELETE FROM"
+      - "dynamodb:DeleteTable"
+      - "s3:DeleteBucket"
+      - "rds:DeleteDBInstance"
+      - "ec2:TerminateInstances"
+      - "RemovalPolicy.DESTROY"
+    
+    SHOW_DIFF: "${SHOW_DIFF:-true}"
+    RUN_TESTS: "${RUN_TESTS:-false}"
+    TEST_COMMAND: "${TEST_COMMAND:-npm test}"
+    
+    # Safety Guardrails
+    
+    - **NEVER skip approval gates**: This deployment requires PR review approval
+    - **ALWAYS show diff**: Display infrastructure changes before deployment
+    - **ALWAYS detect destructive changes**: Warn on risky operations
+    - **NEVER auto-approve production**: This hook is staging-only
+    - **ALWAYS provide rollback instructions**: Include rollback steps in report
+    
+    # Error Handling
+    
+    If deployment fails:
+    1. Capture full error output and logs
+    2. Identify root cause (config error, permission issue, resource conflict)
+    3. Provide actionable remediation steps
+    4. Include rollback instructions if partial deployment occurred
+    5. Do NOT retry automatically - surface error to human operator
+    
+    # Output Format
+    
+    Provide deployment report in markdown:
+    
+    ```markdown
+    # Staging Deployment Report
+    
+    ## Spec Changes
+    - [List key changes from approved spec]
+    
+    ## Infrastructure Changes (Diff)
+    - [Show resources to create/update/delete]
+    - [Highlight destructive changes if any]
+    
+    ## Deployment Execution
+    - Status: ✅ Success / ❌ Failed
+    - Duration: [time]
+    - Resources Deployed: [counts]
+    
+    ## Validation Results
+    - [Health check results]
+    - [Smoke test results if ran]
+    
+    ## Staging URLs
+    - [Service endpoints for manual validation]
+    
+    ## Warnings/Issues
+    - [Any warnings or issues encountered]
+    
+    ## Next Steps
+    1. [Manual validation tasks]
+    2. [Production promotion checklist]
+    
+    ## Rollback Instructions
+    [How to rollback this deployment if issues found]
+    ```
+    
+    # Related Hooks and Integration
+    
+    This hook works with:
+    - `validate-spec-constraints.yaml`: Ensures code matches approved spec
+    - `test-on-save.yaml`: Validates tests pass before deployment
+    - `cascade-api-change.yaml`: Updates downstream consumers of API changes
+    - `deployment-window.yaml`: Enforces regulatory deployment windows (prod)
+    - `require-approvals.yaml`: Validates approval gates before deployment
+
+approval: pr_review
+# pr_review: Human approval required before deployment
+# This creates a PR with deployment plan for review
+# Reviewer approves → deployment executes
+# Reviewer rejects → deployment cancelled
+#
+# IMPORTANT: Do NOT change to "approval: none" without thorough testing
+# Automated staging deployments should have human oversight gate
+#
+# Alternative (advanced teams only):
+# approval: none
+# Use only if:
+# - Comprehensive automated tests exist
+# - Rollback is instant and automated
+# - Non-critical staging environment
+# - Strong monitoring and alerting configured
+
+on_failure: warn
+# warn: Show deployment failures but don't block other operations
+# Failed deployments are surfaced to developer with full context
+#
+# Alternative settings:
+# - block_context: Prevent further file operations if deployment fails
+# - block_send: Prevent context transmission if deployment fails
+#
+# Recommendation: Keep as "warn" to allow developers to investigate and fix
+
+# ============================================================================
+# DEPLOYMENT PATTERNS BY STACK
+# ============================================================================
+#
+# AWS CDK with Multiple Stacks:
+# ```yaml
+# DEPLOYMENT_COMMAND: |
+#   cd infra
+#   cdk deploy --all --require-approval never --context env=staging
+# DIFF_COMMAND: |
+#   cd infra
+#   cdk diff --all --context env=staging
+# ```
+#
+# AWS SAM with Parameter Overrides:
+# ```yaml
+# DEPLOYMENT_COMMAND: |
+#   sam deploy \
+#     --stack-name my-app-staging \
+#     --s3-bucket my-deploy-bucket \
+#     --parameter-overrides Environment=staging \
+#     --no-confirm-changeset \
+#     --no-fail-on-empty-changeset
+# DIFF_COMMAND: |
+#   sam deploy --no-execute-changeset # Creates changeset for review
+# ```
+#
+# Terraform with Remote State:
+# ```yaml
+# DEPLOYMENT_COMMAND: |
+#   cd terraform
+#   terraform workspace select staging
+#   terraform apply -auto-approve -var-file=staging.tfvars
+# DIFF_COMMAND: |
+#   cd terraform
+#   terraform workspace select staging
+#   terraform plan -var-file=staging.tfvars
+# ```
+#
+# Kubernetes with Helm:
+# ```yaml
+# DEPLOYMENT_COMMAND: |
+#   helm upgrade --install my-app ./charts/my-app \
+#     --namespace staging \
+#     --values values.staging.yaml \
+#     --wait
+# DIFF_COMMAND: |
+#   helm diff upgrade my-app ./charts/my-app \
+#     --namespace staging \
+#     --values values.staging.yaml
+# ```
+#
+# Pulumi with Stack Selection:
+# ```yaml
+# DEPLOYMENT_COMMAND: |
+#   pulumi stack select staging
+#   pulumi up --yes --skip-preview
+# DIFF_COMMAND: |
+#   pulumi stack select staging
+#   pulumi preview
+# ```
+#
+# ============================================================================
+# DESTRUCTIVE CHANGE DETECTION
+# ============================================================================
+#
+# The hook scans deployment plans for patterns indicating destructive operations:
+#
+# Database Operations (High Risk):
+# - DROP TABLE / DROP DATABASE
+# - DROP COLUMN (data loss on column removal)
+# - TRUNCATE (data deletion)
+# - ALTER TABLE with column type changes (potential data truncation)
+#
+# AWS Resource Deletions (High Risk):
+# - DynamoDB: DeleteTable, DeleteBackup
+# - RDS: DeleteDBInstance, DeleteDBCluster
+# - S3: DeleteBucket (if data present)
+# - ECS: DeleteService, DeleteCluster (service interruption)
+# - Lambda: DeleteFunction (service interruption)
+#
+# CDK RemovalPolicy (High Risk):
+# - RemovalPolicy.DESTROY on stateful resources
+# - autoDeleteObjects: true on S3 buckets
+#
+# Terraform Destroy Operations (High Risk):
+# - "destroy" plan action on stateful resources
+# - "force_destroy = true" on S3 buckets
+# - "deletion_protection = false" on databases
+#
+# When detected, deployment plan shows:
+# ⚠️  DESTRUCTIVE CHANGE DETECTED
+# Resource: [resource type and name]
+# Operation: [specific destructive operation]
+# Impact: [data loss, service interruption, etc.]
+# Recommendation: [manual review, backup verification, etc.]
+#
+# ============================================================================
+# DIFF VALIDATION PATTERNS
+# ============================================================================
+#
+# CDK Diff Output:
+# Shows: Resources to create (green +), update (yellow ~), delete (red -)
+# Focus on: Security group changes, IAM policy changes, deletion operations
+#
+# Terraform Plan Output:
+# Shows: resources to add, change, destroy
+# Focus on: "forces replacement" (service interruption), destroy count
+#
+# CloudFormation Changeset:
+# Shows: Add, Modify, Remove with resource-level details
+# Focus on: "Replacement: True" (recreates resource), removal operations
+#
+# Kubernetes Diff:
+# Shows: Added, modified, deleted resources
+# Focus on: Service disruptions, config changes affecting running pods
+#
+# The diff validation helps catch:
+# - Unintended resource deletions
+# - Security regression (overly permissive policies)
+# - Service interruptions (instance replacements)
+# - Configuration errors (wrong region, wrong size, wrong network)
+#
+# ============================================================================
+# PRE-DEPLOYMENT TESTS
+# ============================================================================
+#
+# Enable RUN_TESTS=true to execute tests before deployment:
+#
+# Unit Tests (Fast):
+# TEST_COMMAND="npm test -- --testPathPattern=unit"
+#
+# Integration Tests (Comprehensive):
+# TEST_COMMAND="npm test -- --testPathPattern=integration"
+#
+# Infrastructure Tests (CDK):
+# TEST_COMMAND="cd infra && npm test"
+#
+# Terraform Validation:
+# TEST_COMMAND="cd terraform && terraform validate && terraform fmt -check"
+#
+# Custom Validation Script:
+# TEST_COMMAND="./scripts/pre-deploy-validation.sh"
+#
+# If tests fail, deployment is blocked automatically.
+#
+# ============================================================================
+# POST-DEPLOYMENT VALIDATION
+# ============================================================================
+#
+# Automated checks after deployment:
+#
+# 1. Health Check Endpoints:
+#    - GET /health → 200 OK
+#    - GET /ready → 200 OK
+#    - Verify service is accepting traffic
+#
+# 2. Smoke Tests:
+#    - Test critical API endpoints
+#    - Verify database connectivity
+#    - Check external integrations
+#
+# 3. CloudWatch Metrics (if available):
+#    - Check error rates
+#    - Check latency metrics
+#    - Verify no alarms triggered
+#
+# 4. Service Discovery:
+#    - Verify service registered correctly
+#    - Check load balancer target health
+#    - Confirm DNS resolution
+#
+# Configure via environment variables:
+# HEALTH_ENDPOINT="https://staging.example.com/health"
+# SMOKE_TEST_COMMAND="./scripts/smoke-tests.sh staging"
+#
+# ============================================================================
+# ROLLBACK PROCEDURES
+# ============================================================================
+#
+# CDK Rollback:
+# ```bash
+# cd infra
+# cdk deploy PreviousStack --require-approval never --context env=staging
+# # Or rollback via CloudFormation console
+# ```
+#
+# SAM Rollback:
+# ```bash
+# # Redeploy previous version from S3
+# sam deploy --stack-name my-app-staging --s3-bucket my-deploy-bucket
+# ```
+#
+# Terraform Rollback:
+# ```bash
+# cd terraform
+# terraform workspace select staging
+# git checkout <previous-commit>
+# terraform apply -auto-approve
+# ```
+#
+# Kubernetes Rollback:
+# ```bash
+# kubectl rollout undo deployment/my-app --namespace=staging
+# # Or to specific revision
+# kubectl rollout undo deployment/my-app --to-revision=3 --namespace=staging
+# ```
+#
+# ECS Rollback:
+# ```bash
+# aws ecs update-service \
+#   --cluster staging-cluster \
+#   --service my-service \
+#   --task-definition my-task:PREVIOUS_VERSION \
+#   --force-new-deployment
+# ```
+#
+# ============================================================================
+# INTEGRATION WITH CI/CD
+# ============================================================================
+#
+# This hook complements existing CI/CD:
+#
+# Kiro Hook (This): Spec approval → Staging deployment
+# - Triggered by spec approval in IDE
+# - Fast feedback on infrastructure changes
+# - Human approval gate (PR review)
+#
+# CI/CD Pipeline: Code merge → Staging deployment
+# - Triggered by merge to main/staging branch
+# - Runs full test suite
+# - Additional validations (security scans, compliance checks)
+#
+# Best Practice: Use both
+# - Hook: Fast iteration for spec-driven infrastructure changes
+# - Pipeline: Comprehensive validation for code changes
+# - Both deploy to staging before production
+#
+# ============================================================================
+# NOTIFICATION CONFIGURATION
+# ============================================================================
+#
+# Slack Notification (Optional):
+# ```bash
+# if [ -n "$NOTIFY_SLACK" ]; then
+#   curl -X POST "$NOTIFY_SLACK" \
+#     -H 'Content-Type: application/json' \
+#     -d "{
+#       \"text\": \"🚀 Staging Deployment\",
+#       \"blocks\": [
+#         {
+#           \"type\": \"section\",
+#           \"text\": {
+#             \"type\": \"mrkdwn\",
+#             \"text\": \"*Deployment Status:* ✅ Success\n*Environment:* Staging\n*Duration:* 2m 34s\"
+#           }
+#         }
+#       ]
+#     }"
+# fi
+# ```
+#
+# Email Notification (Optional):
+# ```bash
+# if [ -n "$NOTIFY_EMAIL" ]; then
+#   aws ses send-email \
+#     --from "deployments@example.com" \
+#     --destination "ToAddresses=$NOTIFY_EMAIL" \
+#     --message "Subject={Data=Staging Deployment Success},Body={Text={Data=Deployment completed successfully}}"
+# fi
+# ```
+#
+# PagerDuty Integration (Optional):
+# For deployment events and incidents, integrate with PagerDuty API
+#
+# ============================================================================
+# SECURITY CONSIDERATIONS
+# ============================================================================
+#
+# 1. Credentials Management:
+#    - Use IAM roles (no hardcoded credentials)
+#    - AWS: EC2 instance profiles, ECS task roles
+#    - Kubernetes: ServiceAccount with IRSA
+#    - Store secrets in: AWS Secrets Manager, Parameter Store, Vault
+#
+# 2. Staging Environment Isolation:
+#    - Separate AWS accounts for staging/production
+#    - Network isolation (VPCs, security groups)
+#    - Separate IAM policies and roles
+#
+# 3. Approval Gates:
+#    - Require PR review before deployment (approval: pr_review)
+#    - Platform team approval for infrastructure changes
+#    - Automated approval only for low-risk changes
+#
+# 4. Audit Trail:
+#    - All deployments logged with: timestamp, user, spec, changes
+#    - CloudTrail for AWS API calls
+#    - Git history for infrastructure changes
+#
+# ============================================================================
+# COMPLIANCE AND REGULATORY
+# ============================================================================
+#
+# This hook supports:
+#
+# SOX Compliance:
+# - Approval gates satisfy change control requirements
+# - Audit trail of all deployments
+# - Separation of duties (approval ≠ executor)
+#
+# HIPAA/PCI DSS:
+# - Staging environment for testing before production
+# - No PHI/PCI data in staging (enforce via data masking)
+# - Deployment validation catches security regressions
+#
+# FSI Regulations:
+# - Combine with deployment-window.yaml for production
+# - Staging deployments unrestricted (non-production)
+# - Audit trail for all infrastructure changes
+#
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+#
+# "Deployment command not found":
+# - Verify deployment tool installed (cdk, terraform, kubectl, etc.)
+# - Check PATH includes deployment tool binaries
+# - Test command manually before enabling hook
+#
+# "Permission denied" errors:
+# - Check AWS credentials configured (aws configure)
+# - Verify IAM policies allow deployment actions
+# - Check Kubernetes context and permissions
+#
+# "Diff validation fails":
+# - Verify DIFF_COMMAND is correct for your tool
+# - Check command exits with 0 on success
+# - Test diff command manually first
+#
+# "Destructive change not detected":
+# - Add custom patterns to DESTRUCTIVE_PATTERNS
+# - Check pattern matching is case-sensitive
+# - Review diff output format for your tool
+#
+# "Deployment succeeds but service unhealthy":
+# - Enable post-deployment validation (health checks)
+# - Add smoke tests for critical functionality
+# - Check CloudWatch logs for errors
+# - Verify service discovery registration
+#
+# ============================================================================
+# METRICS AND MONITORING
+# ============================================================================
+#
+# Track deployment metrics for DORA:
+#
+# Deployment Frequency:
+# - Count staging deployments per day/week
+# - Measure time from spec approval to deployment
+# - Target: Multiple deployments per day
+#
+# Lead Time for Changes:
+# - Measure: Spec approval → Staging deployment → Prod deployment
+# - This hook reduces: Spec approval → Staging deployment to minutes
+# - Target: <1 hour from spec approval to staging validation
+#
+# Change Failure Rate:
+# - Track: Staging deployments that fail or require rollback
+# - Diff validation and destructive change detection reduce failures
+# - Target: <5% failure rate
+#
+# Time to Restore:
+# - Measure: Issue detection → Rollback completion
+# - Automated rollback reduces restore time
+# - Target: <1 hour
+#
+# ============================================================================
+# RELATED DOCUMENTATION
+# ============================================================================
+#
+# - README.md: Overview of toolbox and problem-to-artifact mapping
+# - docs/decision-tree.md: Decision tree for deployment velocity
+# - docs/dora-metrics.md: DORA metrics mapping
+# - docs/before-after.md: Deployment velocity transformation examples
+# - examples/notification-service/: Full example with deployment automation
+#
+# ============================================================================

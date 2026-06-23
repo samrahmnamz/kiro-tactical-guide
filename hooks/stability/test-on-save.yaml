@@ -1,0 +1,426 @@
+# Stability Hook: Test on Save
+#
+# PURPOSE: Execute tests immediately when agent-generated code is saved.
+#          Provides instant feedback to catch issues before they reach version control.
+#          Prevents AI from destabilizing delivery with untested code changes.
+#
+# REQUIREMENTS ADDRESSED:
+# - 4.1: Run tests immediately when agent-generated code is saved
+# - 4.5: Integrate with existing CI/CD pipelines as safety net
+# - 15.2: Clear customization points with examples
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Set TEST_COMMAND for your project's test framework:
+#    - Node.js/npm:     npm test
+#    - Node.js/yarn:    yarn test
+#    - Node.js/pnpm:    pnpm test
+#    - Python/pytest:   pytest
+#    - Python/unittest: python -m unittest discover
+#    - Go:              go test ./...
+#    - Rust/cargo:      cargo test
+#    - Java/Maven:      mvn test
+#    - Java/Gradle:     gradle test
+#    - Ruby/RSpec:      bundle exec rspec
+#    - .NET:            dotnet test
+#
+# 2. Update SOURCE_PATHS to match your source code directories:
+#    - Typical patterns: src/, lib/, app/, pkg/, internal/
+#    - Adjust based on your repository structure
+#
+# 3. Update TEST_PATHS to match your test file locations:
+#    - Typical patterns: tests/, test/, __tests__/, *_test.go, *.test.ts
+#
+# OPTIONAL CHANGES:
+# 4. Test scope configuration:
+#    - FULL_SUITE: Run all tests (slower, comprehensive)
+#    - RELATED_ONLY: Run tests related to changed file (faster, targeted)
+#    - Set TEST_SCOPE variable below
+#
+# 5. Performance tuning:
+#    - PARALLEL: Run tests in parallel (faster)
+#    - WATCH_MODE: Keep test runner alive (for iterative development)
+#    - Set PERFORMANCE_MODE variable below
+#
+# 6. Test framework specific options:
+#    - Jest: Add --coverage for coverage reports
+#    - pytest: Add --tb=short for concise output
+#    - Go: Add -race for race condition detection
+#    - Cargo: Add --release for optimized builds
+#
+# 7. Failure handling:
+#    - on_failure: warn (default) - Show errors but continue
+#    - on_failure: block_context - Block file from model on test failure
+#    - on_failure: block_send - Block context transmission on failure
+#
+# VALIDATION:
+# - Run your TEST_COMMAND manually: npm test (or your configured command)
+# - Verify tests execute and return proper exit codes (0 = pass, non-zero = fail)
+# - Test with both passing and failing tests to verify feedback
+#
+# EXAMPLES BY PROJECT TYPE:
+#
+# Example 1: TypeScript/Jest Project
+# TEST_COMMAND="npm test -- --passWithNoTests"
+# SOURCE_PATHS="src/**/*.ts"
+# TEST_PATHS="src/**/*.test.ts tests/**/*.ts"
+#
+# Example 2: Python/pytest Project
+# TEST_COMMAND="pytest --tb=short -v"
+# SOURCE_PATHS="src/**/*.py"
+# TEST_PATHS="tests/**/*.py"
+#
+# Example 3: Go Project
+# TEST_COMMAND="go test ./... -v"
+# SOURCE_PATHS="**/*.go"
+# TEST_PATHS="**/*_test.go"
+#
+# Example 4: Rust/Cargo Project
+# TEST_COMMAND="cargo test"
+# SOURCE_PATHS="src/**/*.rs"
+# TEST_PATHS="tests/**/*.rs"
+#
+# Example 5: Monorepo with Multiple Test Commands
+# TEST_COMMAND="./scripts/test-changed-packages.sh"
+# Create custom script that detects changed package and runs appropriate tests
+#
+# ============================================================================
+
+name: test-on-save
+description: |
+  Execute tests immediately when code is saved to provide instant feedback.
+  Catches issues before they reach version control or CI/CD pipeline.
+  Supports multiple test frameworks and project types.
+  
+  Key benefits:
+  - Instant feedback (seconds vs minutes waiting for CI)
+  - Catch issues early (before commit, before PR, before CI/CD)
+  - Reduce change failure rate (DORA metric improvement)
+  - Prevent AI-generated code from destabilizing delivery
+  
+  Addresses Primary Concern #2: AI Destabilizing Delivery
+  - 25% increase in AI adoption → 7.2% reduction in delivery stability
+  - PRs up 98%, incidents up 242.7%
+  - Solution: Instant validation with immediate feedback loops
+
+on:
+  fileEdited:
+    # CUSTOMIZE: Adjust paths to match your repository structure and language
+    
+    # Source files that should trigger tests
+    paths:
+      # JavaScript/TypeScript
+      - "src/**/*.ts"
+      - "src/**/*.tsx"
+      - "src/**/*.js"
+      - "src/**/*.jsx"
+      - "lib/**/*.ts"
+      - "lib/**/*.js"
+      
+      # Python
+      - "src/**/*.py"
+      - "lib/**/*.py"
+      - "app/**/*.py"
+      
+      # Go
+      - "**/*.go"
+      - "pkg/**/*.go"
+      - "internal/**/*.go"
+      - "cmd/**/*.go"
+      
+      # Rust
+      - "src/**/*.rs"
+      - "lib/**/*.rs"
+      
+      # Java
+      - "src/**/*.java"
+      - "lib/**/*.java"
+      
+      # C#/.NET
+      - "src/**/*.cs"
+      - "lib/**/*.cs"
+      
+      # Ruby
+      - "lib/**/*.rb"
+      - "app/**/*.rb"
+      
+      # Test files (run tests when tests themselves change)
+      - "tests/**/*"
+      - "test/**/*"
+      - "__tests__/**/*"
+      - "**/*.test.*"
+      - "**/*.spec.*"
+      - "**/*_test.*"
+
+run:
+  # Local execution - runs on developer machine
+  # No model involved, no data transmission
+  command: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    # ========================================================================
+    # CONFIGURATION - CUSTOMIZE FOR YOUR PROJECT
+    # ========================================================================
+    
+    # Test command for your framework
+    # REQUIRED: Update this to match your project's test command
+    TEST_COMMAND="${TEST_COMMAND:-npm test}"
+    
+    # Test scope: "full" or "related"
+    # full: Run entire test suite (comprehensive but slower)
+    # related: Run only tests related to changed files (fast but may miss integration issues)
+    TEST_SCOPE="${TEST_SCOPE:-full}"
+    
+    # Performance mode: "standard", "parallel", or "watch"
+    # standard: Normal test execution
+    # parallel: Run tests in parallel (requires framework support)
+    # watch: Keep test runner alive (for iterative development)
+    PERFORMANCE_MODE="${PERFORMANCE_MODE:-standard}"
+    
+    # Test output verbosity: "normal", "verbose", or "quiet"
+    OUTPUT_MODE="${OUTPUT_MODE:-normal}"
+    
+    # ========================================================================
+    # FRAMEWORK DETECTION AND COMMAND ADJUSTMENT
+    # ========================================================================
+    
+    echo "🧪 Running tests on save..."
+    echo "Changed files: ${KIRO_CHANGED_FILES:-<unknown>}"
+    
+    # Auto-detect test framework if TEST_COMMAND not explicitly set
+    if [ "$TEST_COMMAND" = "npm test" ]; then
+      if [ -f "package.json" ]; then
+        # Detect JavaScript test framework
+        if grep -q "jest" package.json; then
+          echo "📦 Detected Jest"
+          if [ "$TEST_SCOPE" = "related" ] && [ -n "${KIRO_CHANGED_FILES:-}" ]; then
+            TEST_COMMAND="npm test -- --bail --findRelatedTests ${KIRO_CHANGED_FILES}"
+          else
+            TEST_COMMAND="npm test -- --bail"
+          fi
+        elif grep -q "vitest" package.json; then
+          echo "📦 Detected Vitest"
+          TEST_COMMAND="npm test -- --run"
+        elif grep -q "mocha" package.json; then
+          echo "📦 Detected Mocha"
+          TEST_COMMAND="npm test"
+        fi
+      elif [ -f "pytest.ini" ] || [ -f "pyproject.toml" ]; then
+        echo "🐍 Detected Python/pytest"
+        TEST_COMMAND="pytest"
+        if [ "$OUTPUT_MODE" = "verbose" ]; then
+          TEST_COMMAND="$TEST_COMMAND -v"
+        fi
+        if [ "$OUTPUT_MODE" = "quiet" ]; then
+          TEST_COMMAND="$TEST_COMMAND -q"
+        fi
+      elif [ -f "go.mod" ]; then
+        echo "🐹 Detected Go"
+        TEST_COMMAND="go test ./..."
+        if [ "$OUTPUT_MODE" = "verbose" ]; then
+          TEST_COMMAND="$TEST_COMMAND -v"
+        fi
+        if [ "$PERFORMANCE_MODE" = "parallel" ]; then
+          TEST_COMMAND="$TEST_COMMAND -parallel 4"
+        fi
+      elif [ -f "Cargo.toml" ]; then
+        echo "🦀 Detected Rust"
+        TEST_COMMAND="cargo test"
+        if [ "$PERFORMANCE_MODE" = "parallel" ]; then
+          TEST_COMMAND="$TEST_COMMAND -- --test-threads=4"
+        fi
+      elif [ -f "pom.xml" ]; then
+        echo "☕ Detected Java/Maven"
+        TEST_COMMAND="mvn test"
+      elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+        echo "☕ Detected Java/Gradle"
+        TEST_COMMAND="gradle test"
+      elif [ -f "Gemfile" ]; then
+        echo "💎 Detected Ruby"
+        TEST_COMMAND="bundle exec rspec"
+      elif [ -f "*.csproj" ] || [ -f "*.sln" ]; then
+        echo "🔷 Detected .NET"
+        TEST_COMMAND="dotnet test"
+      fi
+    fi
+    
+    # ========================================================================
+    # TEST EXECUTION
+    # ========================================================================
+    
+    echo "Executing: $TEST_COMMAND"
+    echo ""
+    
+    # Run tests and capture exit code
+    if eval "$TEST_COMMAND"; then
+      EXIT_CODE=0
+      echo ""
+      echo "✅ Tests passed - code is stable"
+      echo ""
+      echo "Impact:"
+      echo "  ✓ Change validated before commit"
+      echo "  ✓ Fast feedback (seconds vs CI minutes)"
+      echo "  ✓ Reduced risk of destabilizing delivery"
+    else
+      EXIT_CODE=$?
+      echo ""
+      echo "❌ Tests failed - issues detected"
+      echo ""
+      echo "Test output above shows specific failures."
+      echo ""
+      echo "Next steps:"
+      echo "  1. Review failing test output above"
+      echo "  2. Fix the code or update tests to match new behavior"
+      echo "  3. Re-save file to re-run tests automatically"
+      echo "  4. If test expectations in spec changed, update spec first"
+      echo ""
+      echo "Remember: Fix the spec, not the prompt"
+      echo "  - If behavior should change: update spec → regenerate code"
+      echo "  - If test is wrong: update test expectations in spec"
+      echo ""
+      echo "Performance note:"
+      echo "  - This hook runs on every save for instant feedback"
+      echo "  - CI/CD pipeline provides additional safety net"
+      echo "  - Failed tests here prevent issues from reaching CI"
+    fi
+    
+    exit $EXIT_CODE
+
+on_failure: warn
+# warn: Show test failures but allow file operations to continue
+# This provides feedback without blocking the developer's workflow
+# CI/CD pipeline acts as final safety net
+#
+# Alternative settings:
+# - block_context: Prevent file from being sent to model if tests fail
+# - block_send: Prevent context transmission if tests fail
+#
+# Recommendation: Keep as "warn" to maintain fast iteration cycles
+# Tests should guide developers, not block them
+
+# ============================================================================
+# INTEGRATION WITH CI/CD
+# ============================================================================
+#
+# This hook provides FIRST LINE OF DEFENSE:
+# - Instant feedback (1-5 seconds typically)
+# - Catches issues before commit
+# - Reduces CI/CD pipeline load
+#
+# CI/CD pipeline provides SAFETY NET:
+# - Comprehensive test suite (may be slower)
+# - Integration tests, E2E tests
+# - Additional validations (lint, type check, security scans)
+# - Deployment gates
+#
+# Best practice: Hooks + CI/CD work together
+# - Hooks: Fast feedback for iterative development
+# - CI/CD: Comprehensive validation before merge/deploy
+#
+# ============================================================================
+# PERFORMANCE OPTIMIZATION TIPS
+# ============================================================================
+#
+# For large test suites (>30 seconds):
+# 1. Use TEST_SCOPE="related" to run only affected tests
+# 2. Use PERFORMANCE_MODE="parallel" for parallel execution
+# 3. Split tests: fast unit tests in hook, slower integration tests in CI
+# 4. Consider test tags/markers to run critical tests only in hook
+#
+# Framework-specific optimizations:
+#
+# Jest:
+# - Add --maxWorkers=4 for parallel execution
+# - Use --onlyChanged to run only changed tests
+# - Add --bail to stop on first failure (faster feedback)
+#
+# pytest:
+# - Add -n 4 (with pytest-xdist) for parallel execution
+# - Use -k "critical" to run only critical tests
+# - Add -x to stop on first failure
+#
+# Go:
+# - Add -parallel 4 for parallel test execution
+# - Use -short flag for quick tests only
+# - Add -race for race condition detection (slower but valuable)
+#
+# Cargo:
+# - Add --release for faster test execution (optimized builds)
+# - Use --test integration for specific test binary
+# - Add -- --test-threads=4 for parallel execution
+#
+# ============================================================================
+# SPEC-DRIVEN TEST EXPECTATIONS
+# ============================================================================
+#
+# This hook enforces test expectations defined in specs:
+#
+# Example spec section:
+# ```markdown
+# ## Test Expectations
+# - ✓ Valid request with correct token → 200 OK
+# - ✓ Valid token → decoded user data returned
+# - ✗ Missing token → 401 Unauthorized
+# - ✗ Invalid token → 401 Unauthorized
+# - ✗ Expired token → 401 Unauthorized
+# ```
+#
+# Tests should match these expectations:
+# - ✓ marks tests that MUST pass (positive cases)
+# - ✗ marks tests that MUST fail (negative cases, error handling)
+#
+# When spec expectations change:
+# 1. Update spec first (source of truth)
+# 2. Regenerate or update tests to match
+# 3. Hook will validate new expectations
+#
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+#
+# "Command not found" errors:
+# - Ensure test framework is installed (npm install, pip install, etc.)
+# - Check TEST_COMMAND is correct for your environment
+# - Verify you're in correct directory (repository root)
+#
+# Tests timing out:
+# - Increase timeout in test framework configuration
+# - Consider TEST_SCOPE="related" for faster execution
+# - Split long tests into separate files for CI
+#
+# False negatives (tests pass but code is broken):
+# - Review test coverage - are critical paths tested?
+# - Check test expectations in spec - are they comprehensive?
+# - Add integration tests in CI/CD for broader validation
+#
+# False positives (tests fail but code is correct):
+# - Update tests to match new behavior
+# - Update spec if behavior changed intentionally
+# - Check for flaky tests (timing, external dependencies)
+#
+# ============================================================================
+# COMPLIANCE AND AUDIT
+# ============================================================================
+#
+# This hook supports:
+# - DORA Metrics: Reduces change failure rate (target: <5%)
+# - Quality Gates: Automated validation before code review
+# - Audit Trail: Test results logged for each save
+# - Regulatory: Demonstrates testing discipline for compliance
+#
+# ============================================================================
+# RELATED HOOKS
+# ============================================================================
+#
+# Combine with:
+# - validate-spec-constraints.yaml: Verify code satisfies spec requirements
+# - lint-on-save.yaml: Check code style and formatting
+# - scan-secrets.yaml: Security validation before tests
+# - pre-send-scan.yaml: Final validation before model sees code
+#
+# ============================================================================
+

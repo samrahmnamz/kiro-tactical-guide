@@ -1,0 +1,583 @@
+# Deployment Hook: Cascade API Changes to Downstream Consumers
+#
+# PURPOSE: Automatically propagate API contract changes to all downstream consumers.
+#          When an API contract changes (endpoints, request/response schemas, events),
+#          this hook identifies affected consumers and updates their integration code,
+#          client stubs, and tests to maintain compatibility.
+#
+# REQUIREMENTS ADDRESSED:
+# - 6.1: Automatically update downstream consumers when API contract changes
+# - 6.5: Configure safe auto-deployment with diff validation
+# - 15.2: Clear customization points with inline guidance
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# NO INSTALLATION REQUIRED - Uses model-assisted analysis and code generation
+#
+# REQUIRED CHANGES:
+# 1. Update CONTRACT_LOCATIONS to match where API contracts are defined:
+#    - OpenAPI/Swagger: openapi.yaml, swagger.json, api-spec.yaml
+#    - GraphQL: schema.graphql, *.graphql
+#    - gRPC: *.proto files
+#    - JSON Schema: schemas/*.json
+#    - TypeScript types: types/api.ts, contracts/*.ts
+#
+# 2. Update CONSUMER_DISCOVERY_PATTERNS to identify consumers:
+#    - Monorepo: services/**/package.json (dependencies field)
+#    - Multi-repo: CONSUMERS.md, .downstream-services.yaml
+#    - Service mesh: Consul/Istio service registry queries
+#    - CDK/Terraform: cross-stack references
+#
+# 3. Configure CONSUMER_UPDATE_STRATEGY:
+#    - client-generation: Regenerate client stubs from contract
+#    - type-update: Update TypeScript/interface types
+#    - test-update: Update integration tests
+#    - manual-review: Flag for manual review (breaking changes)
+#
+# OPTIONAL CHANGES:
+# 4. Configure breaking change detection:
+#    - Define breaking vs non-breaking changes (remove field, change type, new required field)
+#    - Set approval requirements (auto-update for non-breaking, PR for breaking)
+#
+# 5. Consumer testing strategy:
+#    - Run consumer contract tests after update
+#    - Validate backwards compatibility
+#    - Define rollback triggers
+#
+# 6. PR creation settings:
+#    - Auto-create PRs for each consumer
+#    - Or create single PR with all consumer updates
+#    - Include test results in PR description
+#
+# VALIDATION:
+# - Make an API contract change (add new field, change endpoint)
+# - Verify hook identifies all consumers
+# - Check PR includes both successful and failed updates
+# - Verify consumer contract tests are run
+#
+# EXAMPLES:
+# - Add new optional field: Auto-update all consumers (non-breaking)
+# - Remove required field: Create PR for manual review (breaking)
+# - Change response type: Update consumer types and tests
+# - Add new endpoint: Optionally generate new client methods
+# ============================================================================
+
+name: cascade-api-changes
+description: |
+  Automatically propagates API contract changes to downstream consumers:
+  - Detects API contract changes (OpenAPI, GraphQL, gRPC, JSON Schema, TypeScript)
+  - Identifies all downstream consumers (monorepo, multi-repo, service mesh)
+  - Updates consumer integration code, client stubs, and tests
+  - Runs consumer contract tests to verify compatibility
+  - Creates PR with successful and failed updates
+  - Handles breaking vs non-breaking changes appropriately
+  - Enables on-demand deployment without waiting for others (DORA elite velocity)
+
+on:
+  file_save:
+    # CUSTOMIZE: Adjust to where API contracts are defined in your repo
+    paths:
+      # OpenAPI / Swagger specifications
+      - "**/openapi.yaml"
+      - "**/openapi.yml"
+      - "**/swagger.json"
+      - "**/swagger.yaml"
+      - "**/api-spec.yaml"
+      - "**/api-spec.yml"
+      
+      # GraphQL schemas
+      - "**/*.graphql"
+      - "**/schema.graphql"
+      - "**/schema.gql"
+      
+      # gRPC proto files
+      - "**/*.proto"
+      
+      # JSON Schema definitions
+      - "**/schemas/**/*.json"
+      - "**/contracts/**/*.json"
+      
+      # TypeScript API contracts
+      - "**/types/api.ts"
+      - "**/contracts/*.ts"
+      - "**/api-types.ts"
+      
+      # Service specs with contract definitions
+      - "**/specs/**/*.spec.md"
+
+run:
+  agent: sonnet
+  # Uses model for sophisticated change analysis, consumer discovery, and code updates
+  
+  task: |
+    You are an API contract change orchestrator. When an API contract changes, you identify 
+    all downstream consumers and update them to maintain compatibility.
+    
+    ============================================================================
+    STEP 1: DETECT API CONTRACT CHANGES
+    ============================================================================
+    
+    Analyze the changed file(s) to understand the API contract change:
+    
+    1. Extract the contract definition:
+       - OpenAPI/Swagger: Parse YAML/JSON, identify paths, schemas, parameters
+       - GraphQL: Parse schema, identify types, queries, mutations, subscriptions
+       - gRPC: Parse .proto, identify services, messages, RPCs
+       - JSON Schema: Parse schema definitions, identify types and validations
+       - TypeScript: Parse interface/type definitions, identify contracts
+       - Spec files: Extract Contract sections with endpoint/event definitions
+    
+    2. Classify the change:
+       BREAKING CHANGES (require consumer updates):
+       - Removed field from response
+       - Changed field type (string → number)
+       - Renamed field (oldName → newName)
+       - Added required request parameter
+       - Removed endpoint/operation
+       - Changed HTTP method (GET → POST)
+       - Changed response status codes
+       
+       NON-BREAKING CHANGES (backwards compatible):
+       - Added new optional field to response
+       - Added new optional request parameter
+       - Added new endpoint/operation
+       - Improved documentation/descriptions
+       - Relaxed validation (minLength: 10 → 5)
+       
+       POTENTIALLY BREAKING (requires analysis):
+       - Changed field from required to optional (consumers may have validation)
+       - Added new required field with default value
+       - Deprecated field (consumers should migrate)
+    
+    3. Document the change:
+       ```
+       API Contract Change Summary
+       ===========================
+       
+       File: <contract file path>
+       Change Type: <BREAKING | NON-BREAKING | POTENTIALLY-BREAKING>
+       
+       Changes:
+       - [Removed] Field: response.userId (string)
+       - [Added] Field: response.user.id (string)
+       - [Changed] Endpoint: /api/v1/users → /api/v2/users
+       
+       Migration Required: Yes/No
+       Backwards Compatible: Yes/No
+       ```
+    
+    ============================================================================
+    STEP 2: DISCOVER DOWNSTREAM CONSUMERS
+    ============================================================================
+    
+    Identify all services/applications that consume this API:
+    
+    MONOREPO STRATEGY:
+    1. Check package.json dependencies across services:
+       - Look for dependencies on the API package
+       - Check for cross-service imports
+       - Parse import statements referencing the API
+    
+    2. Search for direct API calls:
+       - grep for API endpoint patterns: fetch('/api/users'), axios.get('/api/users')
+       - Search for client import statements: import { UsersApi } from '@api/users-client'
+       - Find GraphQL queries using this schema: query GetUser, useQuery('users')
+    
+    MULTI-REPO STRATEGY:
+    1. Check for consumer registry:
+       - CONSUMERS.md file listing downstream services
+       - .downstream-services.yaml configuration
+       - Service catalog/registry (Consul, Istio, AWS Service Discovery)
+    
+    2. Check for service mesh annotations:
+       - Kubernetes service dependencies
+       - CDK/CloudFormation cross-stack references
+       - API Gateway integration mappings
+    
+    DISCOVERY OUTPUT:
+    List all consumers found with confidence level:
+    ```
+    Consumers Discovered
+    ====================
+    
+    HIGH CONFIDENCE (direct dependency):
+    1. services/frontend-web (import from @api/users)
+    2. services/mobile-bff (package.json dependency)
+    3. services/notification-service (REST client import)
+    
+    MEDIUM CONFIDENCE (indirect usage):
+    4. services/analytics (API endpoint string match)
+    
+    UNKNOWN (no consumers found):
+    Check CONSUMERS.md for manual consumer list
+    ```
+    
+    ============================================================================
+    STEP 3: ANALYZE CONSUMER IMPACT
+    ============================================================================
+    
+    For each consumer, determine update strategy:
+    
+    1. Assess consumer integration type:
+       - Generated client (OpenAPI generator, GraphQL codegen): Regenerate
+       - Hand-written client: Update manually (requires PR review)
+       - TypeScript types: Update type imports
+       - REST calls with inline types: Update type annotations
+       - Contract tests: Update test expectations
+    
+    2. Determine update strategy:
+       ```
+       Consumer: services/frontend-web
+       Integration: Generated TypeScript client (@api/users-client)
+       Impact: High - uses removed field response.userId
+       Strategy: 
+         1. Regenerate client from new OpenAPI spec
+         2. Update component imports (userId → user.id)
+         3. Run consumer unit tests
+         4. Run integration tests against updated API
+       Risk: Medium - breaking change requires code updates
+       Auto-Update: No (breaking change requires review)
+       ```
+    
+    3. Prioritize consumer updates:
+       - CRITICAL: Consumers with breaking changes
+       - HIGH: Consumers that would benefit from new features
+       - LOW: Consumers unaffected by this change
+    
+    ============================================================================
+    STEP 4: UPDATE CONSUMERS
+    ============================================================================
+    
+    For each consumer, perform the update:
+    
+    STRATEGY A: Client Generation (Preferred)
+    1. Locate client generation config:
+       - openapi-generator-cli config
+       - GraphQL codegen.yml
+       - gRPC protoc commands
+    
+    2. Regenerate client:
+       ```bash
+       cd services/frontend-web
+       npm run generate-client  # or equivalent command
+       # This reads the updated contract and regenerates client code
+       ```
+    
+    3. Update consumer code:
+       - Find usages of changed fields/endpoints
+       - Update to new field names/paths
+       - Add error handling for new error cases
+       - Update TypeScript types to match new client
+    
+    4. Update consumer tests:
+       - Update integration test expectations
+       - Update mocks to match new contract
+       - Add tests for new fields/endpoints
+       - Update contract tests (Pact, Spring Cloud Contract)
+    
+    STRATEGY B: Manual Type Updates
+    1. Update TypeScript imports:
+       ```typescript
+       // OLD:
+       import { User } from '@api/types';
+       const userId = response.userId;
+       
+       // NEW:
+       import { User } from '@api/types';
+       const userId = response.user.id;
+       ```
+    
+    2. Update API calls:
+       ```typescript
+       // OLD:
+       const response = await fetch('/api/v1/users/' + id);
+       
+       // NEW:
+       const response = await fetch('/api/v2/users/' + id);
+       ```
+    
+    STRATEGY C: Deprecation Path (for breaking changes)
+    1. Support both old and new contracts temporarily:
+       ```typescript
+       // Backwards compatible accessor
+       const userId = response.user?.id || response.userId;
+       ```
+    
+    2. Add deprecation warnings:
+       ```typescript
+       if (response.userId) {
+         console.warn('response.userId is deprecated, use response.user.id');
+       }
+       ```
+    
+    ============================================================================
+    STEP 5: VALIDATE CONSUMER UPDATES
+    ============================================================================
+    
+    For each updated consumer:
+    
+    1. Run consumer build:
+       ```bash
+       cd services/frontend-web
+       npm run build
+       # Verify TypeScript compilation succeeds
+       # Check for type errors from contract changes
+       ```
+    
+    2. Run consumer tests:
+       ```bash
+       npm run test
+       # Unit tests should pass
+       # Integration tests should pass
+       ```
+    
+    3. Run contract tests (if available):
+       ```bash
+       npm run test:contract
+       # Pact provider verification
+       # Spring Cloud Contract tests
+       # GraphQL schema validation
+       ```
+    
+    4. Track results:
+       ```
+       Consumer Update Results
+       =======================
+       
+       ✅ services/frontend-web
+          - Build: PASSED
+          - Tests: PASSED (32/32)
+          - Contract Tests: PASSED (5/5)
+          - Changes:
+            • Regenerated API client
+            • Updated 12 component files
+            • Updated 8 test files
+       
+       ✅ services/mobile-bff
+          - Build: PASSED
+          - Tests: PASSED (18/18)
+          - Changes:
+            • Updated TypeScript types
+            • Updated 3 controller files
+       
+       ✗ services/analytics
+          - Build: FAILED
+          - Error: Property 'userId' does not exist on type 'User'
+          - Location: src/processors/user-processor.ts:45
+          - Recommendation: Update to use response.user.id
+       ```
+    
+    ============================================================================
+    STEP 6: CREATE PR WITH RESULTS
+    ============================================================================
+    
+    Create a pull request with all consumer updates:
+    
+    PR Title:
+    ```
+    [API Change Cascade] Update consumers for /api/users contract change
+    ```
+    
+    PR Description Template:
+    ```markdown
+    # API Contract Change Cascade
+    
+    ## 📋 Summary
+    
+    API contract change detected in: `contracts/users-api.yaml`
+    
+    **Change Type:** BREAKING
+    
+    **Changes:**
+    - ❌ Removed: `response.userId` (string)
+    - ✅ Added: `response.user.id` (string)
+    - 🔄 Changed: Endpoint path `/api/v1/users` → `/api/v2/users`
+    
+    **Migration Path:**
+    - Replace `response.userId` with `response.user.id` in all consumers
+    - Update endpoint URLs to `/api/v2/users`
+    
+    ---
+    
+    ## ✅ Successfully Updated Consumers (2/3)
+    
+    ### 1. services/frontend-web
+    - **Build:** ✅ PASSED
+    - **Tests:** ✅ PASSED (32/32)
+    - **Contract Tests:** ✅ PASSED (5/5)
+    - **Changes:**
+      - Regenerated API client from updated OpenAPI spec
+      - Updated 12 component files (`userId` → `user.id`)
+      - Updated 8 test files with new assertions
+      - All integration tests passing
+    
+    ### 2. services/mobile-bff
+    - **Build:** ✅ PASSED
+    - **Tests:** ✅ PASSED (18/18)
+    - **Changes:**
+      - Updated TypeScript type imports
+      - Updated 3 controller files
+      - Updated 2 integration test files
+    
+    ---
+    
+    ## ❌ Failed Consumer Updates (1/3)
+    
+    ### 3. services/analytics
+    - **Build:** ❌ FAILED
+    - **Error:** 
+      ```
+      src/processors/user-processor.ts:45:30 - error TS2339: 
+      Property 'userId' does not exist on type 'User'.
+      
+      45     const id = userData.userId;
+                                 ~~~~~~
+      ```
+    - **Recommendation:** 
+      - Update line 45: `const id = userData.user.id;`
+      - Check for other usages of `userId` field
+      - Run tests after manual fix
+    - **Files Requiring Manual Review:**
+      - `src/processors/user-processor.ts` (line 45)
+      - `src/reports/user-report-generator.ts` (line 89, 123)
+    
+    ---
+    
+    ## 🧪 Testing
+    
+    - [x] All consumer builds successful (2/3)
+    - [x] All consumer tests passing (50/50 in successful consumers)
+    - [x] Contract tests verified (5/5 in frontend-web)
+    - [ ] Manual testing required for services/analytics after fix
+    
+    ---
+    
+    ## 🚀 Deployment Plan
+    
+    1. **Merge this PR** - deploys API contract change + 2 working consumers
+    2. **Fix services/analytics** - manual PR for failed consumer
+    3. **Deploy analytics** - after fix is validated
+    
+    **Rollback Plan:**
+    - Revert this PR to restore old contract
+    - Or support both contracts temporarily (v1 + v2 endpoints)
+    
+    ---
+    
+    ## 📊 Impact Assessment
+    
+    **Breaking Change:** Yes
+    **Backwards Compatible:** No (requires consumer updates)
+    **Estimated Downtime:** None (partial success allows phased deployment)
+    
+    **DORA Metrics:**
+    - Deployment Velocity: 77% wait for others → On-demand (2/3 consumers automated)
+    - Lead Time: Manual coordination (days) → Automated cascade (hours)
+    - Change Failure Rate: Reduced via automated contract testing
+    
+    ---
+    
+    ## 🔍 Next Steps
+    
+    1. ✅ Review successful consumer updates (verify logic correctness)
+    2. ❌ Manually fix `services/analytics` (use error locations above)
+    3. ✅ Merge this PR after review
+    4. 📈 Monitor deployment for issues
+    5. 📝 Update CONSUMERS.md if new consumers discovered
+    ```
+    
+    ============================================================================
+    EXECUTION FLOW
+    ============================================================================
+    
+    When this hook triggers:
+    
+    1. Parse changed contract file: ${KIRO_CHANGED_FILES}
+    2. Identify contract changes (breaking vs non-breaking)
+    3. Discover all downstream consumers
+    4. For each consumer:
+       a. Determine update strategy (regenerate client, update types, manual review)
+       b. Apply updates (regenerate, search-replace, deprecation path)
+       c. Run consumer build and tests
+       d. Collect results (success or failure with error details)
+    5. Create PR with:
+       - Change summary
+       - Successful consumer updates (with test results)
+       - Failed consumer updates (with specific errors and fix recommendations)
+       - Deployment plan and rollback strategy
+    6. Output:
+       - If all consumers succeed: "✅ All consumers updated and validated"
+       - If partial success: "⚠️ 2/3 consumers updated - manual fixes needed for services/analytics"
+       - If all fail: "❌ Consumer updates failed - requires manual intervention"
+    
+    ============================================================================
+    CONTEXT FOR ANALYSIS
+    ============================================================================
+    
+    Changed files: ${KIRO_CHANGED_FILES}
+    
+    Repository structure hints for consumer discovery:
+    - Check for services/, packages/, apps/ directories (monorepo)
+    - Look for CONSUMERS.md, .downstream-services.yaml (consumer registry)
+    - Search for package.json files with dependencies on this API
+    - Find import statements referencing this API's types/client
+    - Check for OpenAPI client generation configs (openapi-generator-cli.yaml)
+    - Look for GraphQL codegen configs (codegen.yml)
+    
+    If no consumers are found:
+    "ℹ️ No downstream consumers detected. To enable cascading updates:
+    1. Create CONSUMERS.md listing downstream services
+    2. Or ensure consumers depend on this API package in package.json
+    3. Or configure service mesh with consumer relationships"
+    
+    If contract change is non-breaking:
+    "✅ Non-breaking change detected - consumers can adopt new features when ready.
+    Consider creating informational PR to notify consumers of new capabilities."
+    
+    If contract change is breaking:
+    "⚠️ BREAKING CHANGE detected - all consumers must be updated.
+    Creating PR with consumer updates and migration guide."
+    
+    Always prioritize correctness over speed. Partial success is acceptable - 
+    better to deploy 2/3 working consumers than block all progress on 1 failure.
+
+  approval: pr_review
+  # Requires PR review before merging consumer updates
+  # This ensures human oversight of cascading changes, especially for breaking changes
+
+on_failure: warn
+# warn: Log issues but proceed with PR creation
+# Partial success is valuable - show what worked and what needs manual fixing
+# Change to "block_context" if you want to prevent any cascading on errors
+
+# INTEGRATION NOTES:
+# - Combine with validate-spec-constraints.yaml to ensure contract changes don't violate specs
+# - Use with promote-to-staging.yaml to auto-deploy after consumer updates
+# - Consider contract testing frameworks: Pact, Spring Cloud Contract, Postman Contract Tests
+#
+# PERFORMANCE:
+# - Discovery phase: 5-15 seconds (depends on repo size)
+# - Update phase: 1-3 minutes per consumer (includes test runs)
+# - Total time: typically 5-10 minutes for 3-5 consumers
+#
+# DORA METRICS IMPACT:
+# - Deployment Frequency: 77% wait for others → on-demand deployment
+# - Lead Time for Changes: Days/weeks (manual coordination) → hours (automated cascade)
+# - Change Failure Rate: Reduced via automated contract testing
+# - Time to Restore: Faster via automated rollback detection
+#
+# BEST PRACTICES:
+# 1. Use semantic versioning for APIs (v1, v2, v3)
+# 2. Support multiple contract versions during migration
+# 3. Maintain CONSUMERS.md for explicit consumer tracking
+# 4. Run contract tests in CI/CD as additional safety net
+# 5. Monitor consumer health post-deployment
+# 6. Have rollback plan ready (revert PR or dual-version support)
+#
+# ALTERNATIVES TO FULL AUTOMATION:
+# - For high-risk changes: approval: pr_review (current setting)
+# - For experimental APIs: Skip cascading entirely, require manual updates
+# - For external consumers: Create migration guide instead of direct updates
+

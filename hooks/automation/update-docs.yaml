@@ -1,0 +1,218 @@
+# Automation Hook: API Documentation Auto-Sync
+#
+# PURPOSE: Automatically update API documentation when route handlers or API contracts change.
+#          Keeps docs/api/README.md and OpenAPI specs in sync with code without manual updates.
+#
+# REQUIREMENTS ADDRESSED:
+# - 5.1: Auto-update API documentation when route handlers change
+# - 5.5: Inline customization guidance for doc structure
+# - 15.2: Clear customization points with examples
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Update API_DOCS_PATH to point to your API documentation directory:
+#    - Default: docs/api/README.md
+#    - Alternatives: docs/API.md, api-docs/endpoints.md, etc.
+#
+# 2. Update OPENAPI_SPEC_PATH if you maintain OpenAPI/Swagger specs:
+#    - Default: docs/openapi.yaml
+#    - Alternatives: api/swagger.json, docs/openapi.json, etc.
+#    - Set to empty string if you don't use OpenAPI specs
+#
+# 3. Adjust ROUTE_PATHS to match your API route file patterns:
+#    - Default: src/routes/, src/api/, src/controllers/
+#    - Add your patterns: src/handlers/, lambda/, api/endpoints/
+#
+# OPTIONAL CHANGES:
+# 4. Configure documentation format preferences:
+#    - DOC_FORMAT: "markdown" (default) or "openapi" or "both"
+#    - MARKDOWN_STYLE: "simple" or "detailed" (includes request/response examples)
+#
+# 5. Customize documentation generation behavior:
+#    - AUTO_ADD_NEW_ENDPOINTS: true (default) or false
+#    - INCLUDE_DEPRECATED: false (default) or true
+#    - GENERATE_EXAMPLES: true (default) or false
+#
+# 6. Adjust approval requirements:
+#    - approval: none (auto-commits to branch)
+#    - approval: pr_review (creates PR for review) ← Recommended for production
+#
+# VALIDATION:
+# - After setup: Make a change to any route handler
+# - Check docs/api/README.md was updated with new endpoint signature
+# - Verify OpenAPI spec includes the change (if using OpenAPI)
+#
+# TROUBLESHOOTING:
+# - Docs not updating → Check ROUTE_PATHS matches your file structure
+# - Wrong doc format → Adjust DOC_FORMAT and MARKDOWN_STYLE settings
+# - Missing spec file → Check SPEC_DIR points to your spec directory
+# - Want manual review → Change approval from "none" to "pr_review"
+# ============================================================================
+
+name: update-docs-on-api-change
+description: |
+  Automatically synchronize API documentation when route handlers or API contracts change.
+  Reads the service spec and updates docs/api/README.md and OpenAPI specs to reflect
+  new endpoints, changed signatures, or modified behaviors. Eliminates manual doc updates.
+
+on:
+  file_save:
+    # CUSTOMIZE: Adjust paths to match your API route file structure
+    paths:
+      - "src/routes/**/*.ts"        # Express-style routes
+      - "src/routes/**/*.js"        
+      - "src/api/**/*.ts"            # Generic API files
+      - "src/api/**/*.js"
+      - "src/controllers/**/*.ts"   # MVC controllers
+      - "src/controllers/**/*.js"
+      - "src/handlers/**/*.ts"      # Lambda handlers
+      - "src/handlers/**/*.js"
+      - "api/endpoints/**/*.ts"     # Alternative API structure
+      - "api/endpoints/**/*.js"
+
+run:
+  # Model-assisted documentation update
+  agent: sonnet
+  # CUSTOMIZE: Can switch to "nova" for faster updates if your docs are simple
+  
+  task: |
+    You are updating API documentation after route handler changes.
+    
+    CONTEXT:
+    - The API route handler or controller has changed: ${KIRO_CHANGED_FILES}
+    - Service spec location: ${SPEC_DIR:-specs}/
+    - API documentation: ${API_DOCS_PATH:-docs/api/README.md}
+    - OpenAPI spec: ${OPENAPI_SPEC_PATH:-docs/openapi.yaml}
+    
+    YOUR TASK:
+    1. Read the service spec for this project to understand the intended API contracts
+    2. Analyze the changed route handler to identify:
+       - New endpoints (if any)
+       - Modified endpoint signatures (path, method, parameters)
+       - Changed request/response schemas
+       - Updated error codes or status codes
+       - New or modified authentication requirements
+    
+    3. Update ${API_DOCS_PATH:-docs/api/README.md} with:
+       - New endpoint documentation (if endpoint was added)
+       - Updated endpoint signatures (if existing endpoint changed)
+       - Current request/response examples
+       - Error handling documentation
+       - Authentication/authorization requirements
+       - Rate limiting information (if applicable)
+    
+    4. If ${OPENAPI_SPEC_PATH:-docs/openapi.yaml} exists, update it with:
+       - New path definitions
+       - Updated schema definitions
+       - Revised parameter specifications
+       - Current response codes and schemas
+    
+    5. Maintain consistency:
+       - Use the same format as existing documentation
+       - Keep alphabetical ordering of endpoints (if that's the current style)
+       - Match example style (curl, HTTP, code snippets)
+       - Preserve any custom notes or warnings
+    
+    DOCUMENTATION STYLE:
+    - Format: ${DOC_FORMAT:-markdown}
+    - Detail level: ${MARKDOWN_STYLE:-simple}
+    - Include examples: ${GENERATE_EXAMPLES:-true}
+    - Include deprecated endpoints: ${INCLUDE_DEPRECATED:-false}
+    
+    IMPORTANT:
+    - Do NOT remove existing endpoints unless explicitly deleted in code
+    - Do NOT change the overall documentation structure
+    - Do NOT modify unrelated sections
+    - If uncertain about endpoint behavior, reference the spec
+    - If spec is outdated or missing details, flag this in the doc update
+    
+    VERIFICATION:
+    After updating documentation:
+    - Verify all endpoint paths match the code
+    - Verify request/response schemas are accurate
+    - Verify authentication requirements are current
+    - Check that examples are valid and up-to-date
+
+  approval: none
+  # CUSTOMIZE: Change to "pr_review" if you want human review before doc commits
+  # - none: Auto-commits documentation updates to current branch
+  # - pr_review: Creates a PR for review (recommended for production)
+
+on_failure: warn
+# warn: Logs warning but continues - docs out of sync but not blocking
+# Alternative: block_context - prevents further work until docs are fixed
+
+# ENVIRONMENT VARIABLES (set in .kiro/config or shell):
+# - SPEC_DIR: Directory containing service specs (default: "specs")
+# - API_DOCS_PATH: Path to API documentation (default: "docs/api/README.md")
+# - OPENAPI_SPEC_PATH: Path to OpenAPI spec (default: "docs/openapi.yaml")
+# - DOC_FORMAT: Documentation format - "markdown", "openapi", or "both" (default: "markdown")
+# - MARKDOWN_STYLE: "simple" or "detailed" (default: "simple")
+# - GENERATE_EXAMPLES: "true" or "false" (default: "true")
+# - INCLUDE_DEPRECATED: "true" or "false" (default: "false")
+# - AUTO_ADD_NEW_ENDPOINTS: "true" or "false" (default: "true")
+
+# WORKFLOW INTEGRATION:
+# This hook works together with:
+# 1. scaffold-service.yaml - Generates initial docs when new spec is created
+# 2. regen-clients.yaml - Updates client stubs when API contracts change
+# 3. validate-spec-constraints.yaml - Ensures code matches spec before doc generation
+
+# TIME SAVINGS:
+# - Manual documentation: 15-30 minutes per endpoint change
+# - Automated with this hook: <1 minute, zero manual effort
+# - Average API with 20 endpoints: ~10 hours/month saved
+
+# BEST PRACTICES:
+# 1. Keep your service spec up to date - it's the source of truth
+# 2. Review auto-generated docs periodically for accuracy
+# 3. Add custom notes/warnings manually in dedicated sections
+# 4. Use approval: pr_review for production services
+# 5. Combine with spec-first workflow for best results
+
+# EXAMPLE DOCUMENTATION OUTPUT:
+# 
+# ## POST /api/payments
+# 
+# Process a payment transaction.
+# 
+# **Authentication:** Bearer token required
+# 
+# **Request Body:**
+# ```json
+# {
+#   "amount": 1000,
+#   "currency": "USD",
+#   "paymentMethod": "card",
+#   "token": "tok_..."
+# }
+# ```
+# 
+# **Response (200):**
+# ```json
+# {
+#   "id": "pay_...",
+#   "status": "succeeded",
+#   "amount": 1000
+# }
+# ```
+# 
+# **Error Codes:**
+# - 400: Invalid request parameters
+# - 401: Authentication required
+# - 402: Payment failed
+# - 500: Internal server error
+
+# MONITORING AND METRICS:
+# - Track documentation drift: days since last doc update vs code changes
+# - Monitor doc generation failures: indicates spec or code issues
+# - Measure time saved: manual doc time vs automated sync
+
+# COMPLIANCE NOTES:
+# - API documentation is often required for SOC 2, ISO 27001
+# - Auto-sync ensures documentation is current for audits
+# - Maintains audit trail of when docs were updated (git history)
+# - Reduces risk of undocumented API changes

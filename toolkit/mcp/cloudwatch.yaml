@@ -1,0 +1,432 @@
+# ============================================================================
+# MCP Integration: CloudWatch Logs and Metrics
+# ============================================================================
+#
+# PURPOSE:
+# Connect CloudWatch logs and metrics as model context for debugging, incident
+# response, and postmortem analysis. This integration enables AI agents to
+# query application logs, review error patterns, and analyze performance metrics
+# directly from CloudWatch without manual context switching.
+#
+# CONCERNS ADDRESSED:
+# - Primary Concern 5: Cognitive Overload (reduce tool sprawl)
+# - Primary Concern 10: Knowledge Loss (incident context preserved)
+#
+# USE CASES:
+# 1. Debugging production issues with immediate access to logs
+# 2. Root cause analysis during incident response
+# 3. Postmortem analysis with automated log/metric correlation
+# 4. Performance investigation (latency spikes, error rates)
+# 5. Proactive monitoring context for agent-driven alerts
+#
+# INTEGRATION PATTERN:
+# This MCP (Model Context Protocol) integration runs as a server that provides
+# CloudWatch data as structured context to AI agents. The agent can query logs,
+# retrieve metrics, and correlate events without leaving the development environment.
+#
+# SECURITY:
+# - Uses AWS IAM credentials from the local environment (AWS CLI profile)
+# - Honors AWS resource-based policies and CloudWatch permissions
+# - Sensitive log data should follow excluded-paths.yaml rules if included in
+#   local files; this integration queries CloudWatch directly (not stored locally)
+# - Consider using IAM roles with least-privilege access to CloudWatch
+#
+# ============================================================================
+
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Update 'region' to match your AWS region
+# 2. Update 'log_groups' to include your application's log groups
+# 3. Update 'metrics.namespace' to match your CloudWatch namespaces
+# 4. Update 'metrics.metric' to include the metrics you want to monitor
+#
+# OPTIONAL CHANGES:
+# 1. Adjust 'metrics.period' (default: 300 seconds = 5 minutes)
+# 2. Add additional log groups for multi-service debugging
+# 3. Configure 'log_query_limit' (default: 100 most recent entries)
+# 4. Add custom CloudWatch Insights queries for complex log analysis
+#
+# ENVIRONMENT-SPECIFIC SETTINGS:
+# - Development: Include verbose debug logs, broad metric access
+# - Staging: Include application logs, limited system metrics
+# - Production: Restrict to essential logs, require read-only IAM role
+#
+# IAM PERMISSIONS REQUIRED:
+# The AWS credentials used by this MCP integration must have:
+# - logs:DescribeLogGroups
+# - logs:FilterLogEvents
+# - logs:GetLogEvents
+# - cloudwatch:GetMetricData
+# - cloudwatch:GetMetricStatistics
+# - cloudwatch:ListMetrics
+#
+# VALIDATION COMMAND:
+# To verify your AWS credentials have the required permissions:
+#   aws logs describe-log-groups --region <YOUR_REGION>
+#   aws cloudwatch list-metrics --namespace <YOUR_NAMESPACE> --region <YOUR_REGION>
+#
+# COST CONSIDERATIONS:
+# - Log queries via FilterLogEvents incur CloudWatch Logs query charges
+# - Metric queries via GetMetricData incur CloudWatch API call charges
+# - Consider using CloudWatch Logs Insights queries for complex analysis
+# - Monitor costs via AWS Cost Explorer (CloudWatch Logs and CloudWatch API categories)
+#
+# ============================================================================
+
+name: cloudwatch-context
+description: |
+  Provides CloudWatch logs and metrics as model context for debugging,
+  incident response, and performance analysis.
+
+# MCP provider type - this tells Kiro which MCP server to use
+provider: aws-cloudwatch
+
+# Configuration for CloudWatch access
+config:
+  # ============================================================================
+  # AWS REGION
+  # ============================================================================
+  # CUSTOMIZE: Set to your primary AWS region
+  region: us-east-1
+  
+  # ============================================================================
+  # AUTHENTICATION
+  # ============================================================================
+  # This integration uses AWS credentials from your local environment:
+  # - AWS CLI profile (AWS_PROFILE environment variable)
+  # - Default credentials (~/.aws/credentials)
+  # - IAM instance profile (if running on EC2)
+  # - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+  #
+  # To use a specific AWS CLI profile:
+  #   export AWS_PROFILE=cloudwatch-readonly
+  #
+  # To create a CloudWatch read-only IAM role:
+  #   aws iam create-role --role-name CloudWatchReadOnly \
+  #     --assume-role-policy-document file://trust-policy.json
+  #   aws iam attach-role-policy --role-name CloudWatchReadOnly \
+  #     --policy-arn arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess
+  
+  # ============================================================================
+  # LOG GROUPS
+  # ============================================================================
+  # CUSTOMIZE: Add your application's CloudWatch Log Groups
+  # Format: /aws/{service}/{name} or custom paths
+  log_groups:
+    # Lambda function logs
+    - /aws/lambda/payment-processor
+    - /aws/lambda/notification-service
+    - /aws/lambda/rate-limiter
+    
+    # ECS/Fargate logs
+    - /aws/ecs/api-gateway
+    - /aws/ecs/settlement-engine
+    
+    # Custom application logs
+    - /app/backend/api
+    - /app/frontend/errors
+    
+    # Add your log groups here:
+    # - /aws/lambda/[YOUR_SERVICE_NAME]
+    # - /aws/ecs/[YOUR_SERVICE_NAME]
+    # - /app/[YOUR_APP_NAME]/[LOG_CATEGORY]
+  
+  # ============================================================================
+  # LOG QUERY SETTINGS
+  # ============================================================================
+  log_query_settings:
+    # Maximum number of log entries to return per query (default: 100)
+    limit: 100
+    
+    # Default time range for log queries (in minutes, default: 60)
+    # Agent queries can override this, but this is the default
+    default_time_range_minutes: 60
+    
+    # Filter patterns for common queries (optional)
+    # These are shortcuts the agent can use for frequent searches
+    filter_patterns:
+      errors: "ERROR"
+      warnings: "WARN"
+      exceptions: "Exception"
+      slow_queries: "[duration > 1000]"
+      http_5xx: "[status_code = 5??]"
+  
+  # ============================================================================
+  # CLOUDWATCH INSIGHTS QUERIES (Advanced)
+  # ============================================================================
+  # Pre-defined CloudWatch Insights queries for complex log analysis
+  insights_queries:
+    # Top error messages in the last hour
+    - name: top-errors
+      query: |
+        fields @timestamp, @message
+        | filter @message like /ERROR/
+        | stats count() as error_count by @message
+        | sort error_count desc
+        | limit 10
+      log_groups:
+        - /aws/lambda/payment-processor
+        - /aws/lambda/notification-service
+    
+    # Slow API requests (>1 second)
+    - name: slow-requests
+      query: |
+        fields @timestamp, request_id, duration, endpoint
+        | filter duration > 1000
+        | sort duration desc
+        | limit 20
+      log_groups:
+        - /app/backend/api
+    
+    # Add your custom Insights queries here:
+    # - name: [QUERY_NAME]
+    #   query: |
+    #     [CLOUDWATCH_INSIGHTS_QUERY]
+    #   log_groups:
+    #     - [LOG_GROUP_PATH]
+  
+  # ============================================================================
+  # METRICS
+  # ============================================================================
+  # CUSTOMIZE: Add the CloudWatch metrics you want to monitor
+  metrics:
+    # Lambda function errors
+    - namespace: AWS/Lambda
+      metric: Errors
+      period: 300  # 5 minutes
+      dimensions:
+        - name: FunctionName
+          value: payment-processor
+    
+    - namespace: AWS/Lambda
+      metric: Duration
+      period: 300
+      dimensions:
+        - name: FunctionName
+          value: payment-processor
+    
+    # API Gateway metrics
+    - namespace: AWS/ApiGateway
+      metric: 5XXError
+      period: 300
+      dimensions:
+        - name: ApiName
+          value: production-api
+    
+    - namespace: AWS/ApiGateway
+      metric: Latency
+      period: 300
+      dimensions:
+        - name: ApiName
+          value: production-api
+    
+    # DynamoDB metrics
+    - namespace: AWS/DynamoDB
+      metric: UserErrors
+      period: 300
+      dimensions:
+        - name: TableName
+          value: payments
+    
+    # ECS metrics
+    - namespace: AWS/ECS
+      metric: CPUUtilization
+      period: 300
+      dimensions:
+        - name: ServiceName
+          value: api-gateway
+        - name: ClusterName
+          value: production
+    
+    # Custom application metrics
+    - namespace: CustomApp/Services
+      metric: ErrorCount
+      period: 300
+      dimensions:
+        - name: ServiceName
+          value: payment-processor
+    
+    - namespace: CustomApp/Services
+      metric: RequestLatency
+      period: 300
+      dimensions:
+        - name: ServiceName
+          value: payment-processor
+    
+    # Add your custom metrics here:
+    # - namespace: [YOUR_NAMESPACE]
+    #   metric: [METRIC_NAME]
+    #   period: 300
+    #   dimensions:
+    #     - name: [DIMENSION_NAME]
+    #       value: [DIMENSION_VALUE]
+  
+  # ============================================================================
+  # METRIC QUERY SETTINGS
+  # ============================================================================
+  metric_query_settings:
+    # Default time range for metric queries (in minutes, default: 60)
+    default_time_range_minutes: 60
+    
+    # Default statistic for metrics (default: Average)
+    # Options: Average, Sum, Minimum, Maximum, SampleCount
+    default_statistic: Average
+    
+    # Enable extended statistics (p50, p90, p99 percentiles)
+    # This is useful for latency metrics
+    extended_statistics:
+      - p50
+      - p90
+      - p95
+      - p99
+
+# ============================================================================
+# MCP TOOLS AVAILABLE TO AI AGENTS
+# ============================================================================
+# When this MCP integration is active, AI agents can use these tools:
+#
+# 1. cloudwatch_query_logs
+#    - Query log groups with filters and time ranges
+#    - Example: "Show me errors in payment-processor from the last hour"
+#
+# 2. cloudwatch_get_metrics
+#    - Retrieve metric data for specified time ranges
+#    - Example: "What was the average latency for the API in the last 30 minutes?"
+#
+# 3. cloudwatch_run_insights_query
+#    - Execute pre-defined or custom CloudWatch Insights queries
+#    - Example: "Run the top-errors insights query"
+#
+# 4. cloudwatch_list_log_groups
+#    - List all available log groups for discovery
+#    - Example: "What log groups are available for debugging?"
+#
+# 5. cloudwatch_list_metrics
+#    - List all available metrics in a namespace
+#    - Example: "What metrics are available for Lambda functions?"
+#
+# AI agents automatically use these tools when you ask questions like:
+# - "Why is the payment processor failing?"
+# - "Show me recent errors in the API"
+# - "What's the latency trend for the last hour?"
+# - "Are there any exceptions in the settlement-engine logs?"
+#
+# ============================================================================
+
+# ============================================================================
+# USAGE EXAMPLES
+# ============================================================================
+#
+# Example 1: Debugging production errors
+# User: "The payment processor is throwing errors, can you investigate?"
+# Agent:
+#   1. Uses cloudwatch_query_logs with log_group=/aws/lambda/payment-processor
+#   2. Filters for ERROR messages in the last hour
+#   3. Correlates with cloudwatch_get_metrics for Lambda Errors metric
+#   4. Identifies root cause from log messages and error spike timing
+#
+# Example 2: Performance investigation
+# User: "API latency spiked at 2 PM, what happened?"
+# Agent:
+#   1. Uses cloudwatch_get_metrics for API Gateway Latency at 2 PM
+#   2. Uses cloudwatch_query_logs for slow-requests in that time window
+#   3. Identifies slow database queries or external API timeouts
+#   4. Suggests optimization based on log patterns
+#
+# Example 3: Postmortem analysis
+# User: "Generate a postmortem for yesterday's incident"
+# Agent:
+#   1. Uses cloudwatch_run_insights_query to get top-errors summary
+#   2. Retrieves metric data for error rates, latency, and throughput
+#   3. Correlates timeline of events from logs
+#   4. Drafts postmortem document with root cause and timeline
+#
+# ============================================================================
+
+# ============================================================================
+# INTEGRATION WITH HOOKS
+# ============================================================================
+# This MCP integration works seamlessly with other toolkit hooks:
+#
+# - post-incident-learning.yaml:
+#   After an incident, the hook queries CloudWatch logs/metrics to extract
+#   lessons learned and automatically updates spec constraints
+#
+# - validate-against-golden.yaml:
+#   When validating observability.spec.md compliance, the agent can verify
+#   that metrics and logs are actually configured in CloudWatch
+#
+# Example hook usage:
+#   run:
+#     agent: sonnet
+#     task: |
+#       Query CloudWatch logs for errors in the last 24 hours.
+#       Identify patterns and update spec constraints to prevent recurrence.
+#
+# ============================================================================
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+#
+# Issue: "Access Denied" errors when querying CloudWatch
+# Solution:
+#   - Verify AWS credentials: aws sts get-caller-identity
+#   - Check IAM permissions: logs:FilterLogEvents, cloudwatch:GetMetricData
+#   - Ensure log groups exist: aws logs describe-log-groups
+#
+# Issue: No log entries returned
+# Solution:
+#   - Verify log group names are correct (case-sensitive)
+#   - Check time range (default is last 60 minutes)
+#   - Confirm logs exist: aws logs tail /aws/lambda/[function-name]
+#
+# Issue: Metrics not found
+# Solution:
+#   - Verify namespace and metric name spelling
+#   - Check dimensions match actual metric dimensions
+#   - List available metrics: aws cloudwatch list-metrics --namespace [namespace]
+#
+# Issue: High CloudWatch API costs
+# Solution:
+#   - Reduce log_query_settings.limit (default: 100)
+#   - Decrease default_time_range_minutes (default: 60)
+#   - Use CloudWatch Insights queries for complex analysis (more efficient)
+#   - Monitor API call volume in AWS Cost Explorer
+#
+# Issue: MCP connection failures
+# Solution:
+#   - Check network connectivity to AWS endpoints
+#   - Verify region is correct
+#   - Try refreshing AWS credentials: aws sso login
+#   - Check MCP server logs for detailed error messages
+#
+# ============================================================================
+
+# ============================================================================
+# RELATED TOOLKIT ARTIFACTS
+# ============================================================================
+# - toolkit/mcp/pagerduty.yaml: Incident context integration
+# - toolkit/specs/golden/observability.spec.md: Observability standards
+# - toolkit/hooks/post-incident-learning.yaml: Automated incident learning
+# - examples/*/infra/: CDK stacks with CloudWatch configuration
+# - docs/decision-tree.md: Problem-to-artifact mapping
+#
+# ============================================================================
+
+# ============================================================================
+# CUSTOMIZATION CHECKLIST
+# ============================================================================
+# Before using this MCP integration, customize:
+# [ ] region: Set to your AWS region
+# [ ] log_groups: Add your application's log groups
+# [ ] metrics.namespace: Add your CloudWatch metric namespaces
+# [ ] metrics.metric: Add the metrics you want to monitor
+# [ ] AWS credentials: Ensure local credentials have CloudWatch read access
+# [ ] Validation: Run aws logs describe-log-groups to verify access
+# [ ] Cost monitoring: Set up AWS Cost Explorer alert for CloudWatch API usage
+#
+# ============================================================================

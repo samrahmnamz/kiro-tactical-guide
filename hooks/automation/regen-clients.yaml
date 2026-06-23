@@ -1,0 +1,637 @@
+# Automation Hook: Regenerate Client Stubs
+#
+# PURPOSE: Automatically regenerate client stubs when API contracts change.
+#          Keeps downstream consumers in sync with API changes without manual updates.
+#          Eliminates repetitive client SDK maintenance work.
+#
+# REQUIREMENTS ADDRESSED:
+# - 5.3: Automatically regenerate client stubs when API contracts change
+# - 5.5: Customize scaffolding templates for team-specific conventions
+# - 15.2: Clear customization points with examples
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Set API_CONTRACT_FILES to match your API definition format:
+#    - OpenAPI/Swagger:     api/openapi.yaml, api/swagger.json
+#    - GraphQL:             schema.graphql, schema.gql
+#    - gRPC/Protobuf:       proto/**/*.proto
+#    - TypeScript types:    src/types/api.ts, src/contracts/**/*.ts
+#    - JSON Schema:         schemas/**/*.json
+#
+# 2. Set CLIENT_OUTPUT_DIR for generated client code:
+#    - TypeScript clients:  clients/typescript/, sdk/typescript/
+#    - Python clients:      clients/python/, sdk/python/
+#    - Go clients:          clients/go/, sdk/go/
+#    - Multiple languages:  Use separate output dirs per language
+#
+# 3. Choose CLIENT_GENERATOR tool:
+#    - openapi-generator:   For OpenAPI/Swagger specs
+#    - graphql-codegen:     For GraphQL schemas
+#    - protoc:              For gRPC/Protobuf
+#    - TypeScript compiler: For TypeScript-based contracts
+#    - Custom script:       Your own generation logic
+#
+# OPTIONAL CHANGES:
+# 4. Client generation strategy:
+#    - REGENERATE_ALL: Regenerate all clients (comprehensive)
+#    - INCREMENTAL: Only regenerate affected clients (faster)
+#    - Set GENERATION_STRATEGY variable below
+#
+# 5. Version management:
+#    - AUTO_VERSION: Automatically bump client version on changes
+#    - MANUAL_VERSION: Keep version unchanged (manual control)
+#    - Set VERSION_STRATEGY variable below
+#
+# 6. Multi-language support:
+#    - CLIENT_LANGUAGES: List of target languages
+#    - Set to generate clients for multiple languages simultaneously
+#
+# 7. Downstream notification:
+#    - NOTIFY_CONSUMERS: Create issues/PRs in consumer repos
+#    - CHANGELOG_UPDATE: Auto-update CHANGELOG with breaking changes
+#
+# 8. Breaking change detection:
+#    - DETECT_BREAKING_CHANGES: Analyze API changes for compatibility
+#    - REQUIRE_APPROVAL: Block generation if breaking changes detected
+#
+# VALIDATION:
+# - Run your CLIENT_GENERATOR manually to verify it works
+# - Check generated client code compiles and passes type checks
+# - Test generated clients against your API
+# - Verify version bumping logic if enabled
+#
+# EXAMPLES BY API FORMAT:
+#
+# Example 1: OpenAPI/Swagger → TypeScript Client
+# API_CONTRACT_FILES="api/openapi.yaml"
+# CLIENT_OUTPUT_DIR="clients/typescript"
+# CLIENT_GENERATOR="openapi-generator-cli generate -i api/openapi.yaml -g typescript-axios -o clients/typescript"
+#
+# Example 2: GraphQL → Multiple Language Clients
+# API_CONTRACT_FILES="schema.graphql"
+# CLIENT_LANGUAGES="typescript,python,go"
+# CLIENT_GENERATOR="graphql-codegen"
+#
+# Example 3: gRPC/Protobuf → Go and Python
+# API_CONTRACT_FILES="proto/**/*.proto"
+# CLIENT_LANGUAGES="go,python"
+# CLIENT_GENERATOR="buf generate"
+#
+# Example 4: TypeScript Types → Client SDK
+# API_CONTRACT_FILES="src/contracts/api.ts"
+# CLIENT_OUTPUT_DIR="sdk/typescript"
+# Custom generation using ts-morph or custom script
+#
+# Example 5: Multiple APIs with Independent Clients
+# Create separate hooks for each API or use script to handle multiple
+#
+# ============================================================================
+
+name: regen-clients
+description: |
+  Automatically regenerate client stubs when API contracts change.
+  Keeps downstream consumers in sync without manual SDK maintenance.
+  Supports multiple API formats and target languages.
+  
+  Key benefits:
+  - Eliminate manual client SDK updates (saves 36% of manual task time)
+  - Keep clients in sync with API automatically
+  - Catch breaking changes early (before consumers break)
+  - Reduce dependency coordination delays (77% of teams wait for others)
+  
+  Addresses Primary Concern #3: Engineer Burnout from Repetitive Work
+  - 47% of engineers report burnout from repetitive infrastructure work
+  - 36% of time spent on manual tasks → automated via hooks
+  - Solution: Automatic client generation on API contract changes
+  
+  Addresses Primary Concern #4: Deployment Velocity Gap
+  - 77% of teams wait for others before shipping
+  - Cascading API changes automatically → on-demand deployment
+
+on:
+  fileEdited:
+    # CUSTOMIZE: Adjust paths to match your API contract files
+    
+    # OpenAPI/Swagger contracts
+    paths:
+      - "api/**/*.yaml"
+      - "api/**/*.yml"
+      - "api/**/*.json"
+      - "swagger/**/*.yaml"
+      - "swagger/**/*.json"
+      - "openapi/**/*.yaml"
+      - "openapi/**/*.json"
+      
+      # GraphQL schemas
+      - "schema.graphql"
+      - "schema.gql"
+      - "**/*.graphql"
+      - "**/*.gql"
+      
+      # gRPC/Protobuf definitions
+      - "proto/**/*.proto"
+      - "**/*.proto"
+      
+      # TypeScript API contracts
+      - "src/contracts/**/*.ts"
+      - "src/types/api.ts"
+      - "contracts/**/*.ts"
+      
+      # JSON Schema definitions
+      - "schemas/**/*.json"
+      - "api-schemas/**/*.json"
+
+run:
+  # Agent-assisted execution - uses model for intelligent client generation
+  # Sends API contract changes as context to model
+  agent: sonnet
+  task: |
+    You are regenerating client stubs after an API contract change.
+    
+    # Context
+    The API contract files have been modified. Your task is to:
+    1. Analyze the API contract changes
+    2. Detect any breaking changes
+    3. Regenerate client stubs for all target languages
+    4. Update client versions if configured
+    5. Create a summary of changes for downstream consumers
+    
+    # Changed Files
+    ${KIRO_CHANGED_FILES}
+    
+    # Configuration
+    Read the customization configuration from this hook file to determine:
+    - API contract file format (OpenAPI, GraphQL, Protobuf, TypeScript)
+    - Target client languages
+    - Client output directories
+    - Client generation tool/command
+    - Version bumping strategy
+    - Breaking change handling policy
+    
+    # Steps to Execute
+    
+    ## Step 1: Analyze API Changes
+    - Read the changed API contract files
+    - Identify what changed: new endpoints, modified schemas, removed fields, etc.
+    - Classify changes as: breaking, non-breaking, or additive
+    - Generate a human-readable summary of changes
+    
+    ## Step 2: Detect Breaking Changes
+    A breaking change includes:
+    - Removed endpoints or operations
+    - Removed required fields from request/response schemas
+    - Changed field types in incompatible ways (string → number)
+    - Removed enum values
+    - Changed HTTP methods for existing endpoints
+    - Changed authentication requirements
+    
+    If breaking changes detected:
+    - List each breaking change with specific details
+    - Recommend version bump strategy (major version bump)
+    - If REQUIRE_APPROVAL is enabled, stop and request human approval
+    
+    ## Step 3: Generate Clients
+    Based on the API format, run the appropriate generation command:
+    
+    ### For OpenAPI/Swagger:
+    ```bash
+    # Example with openapi-generator
+    openapi-generator-cli generate \
+      -i ${API_CONTRACT_FILE} \
+      -g ${TARGET_LANGUAGE} \
+      -o ${CLIENT_OUTPUT_DIR}/${TARGET_LANGUAGE} \
+      --additional-properties=npmName=${CLIENT_PACKAGE_NAME}
+    ```
+    
+    ### For GraphQL:
+    ```bash
+    # Example with graphql-codegen
+    graphql-codegen --config codegen.yml
+    ```
+    
+    ### For gRPC/Protobuf:
+    ```bash
+    # Example with buf
+    buf generate
+    
+    # Or with protoc
+    protoc --${TARGET_LANGUAGE}_out=${CLIENT_OUTPUT_DIR} ${PROTO_FILES}
+    ```
+    
+    ### For TypeScript Contracts:
+    - Read TypeScript contract definitions
+    - Generate client SDK with proper types
+    - Include request/response helpers
+    - Generate TypeDoc documentation
+    
+    ## Step 4: Validate Generated Clients
+    For each generated client:
+    - Verify files were created
+    - Run type checker (TypeScript: tsc, Python: mypy, etc.)
+    - Run linter if configured
+    - Ensure no compilation errors
+    - Report any validation failures
+    
+    ## Step 5: Update Client Versions
+    If AUTO_VERSION is enabled:
+    - Bump version based on change type:
+      - Breaking changes → major version bump (1.0.0 → 2.0.0)
+      - New features → minor version bump (1.0.0 → 1.1.0)
+      - Bug fixes only → patch version bump (1.0.0 → 1.0.1)
+    - Update package.json, setup.py, go.mod, or equivalent
+    - Update CHANGELOG with summary of changes
+    
+    ## Step 6: Create Summary Report
+    Generate a markdown summary including:
+    ```markdown
+    # API Client Regeneration Summary
+    
+    ## Changed API Contracts
+    - ${list of changed contract files}
+    
+    ## Change Classification
+    - Breaking changes: ${count} (list if any)
+    - New features: ${count} (list if any)
+    - Bug fixes: ${count} (list if any)
+    
+    ## Generated Clients
+    - ${language}: ${output directory} (version ${new_version})
+    - ${language}: ${output directory} (version ${new_version})
+    
+    ## Breaking Changes (if any)
+    ${detailed list of breaking changes with recommendations}
+    
+    ## Downstream Consumer Impact
+    ${summary of which consumers need updates}
+    
+    ## Next Steps for Consumers
+    1. Update client dependency to version ${new_version}
+    2. Review breaking changes (if any)
+    3. Update code to handle new API contract
+    4. Run tests to verify compatibility
+    ```
+    
+    ## Step 7: Notify Downstream Consumers (optional)
+    If NOTIFY_CONSUMERS is enabled:
+    - Identify repositories that depend on these clients
+    - Create GitHub issues or PRs in consumer repos
+    - Include migration guide for breaking changes
+    - Link to updated client documentation
+    
+    # Output
+    - Write generated clients to configured output directories
+    - Create summary report as REGEN_CLIENTS_SUMMARY.md
+    - If breaking changes: highlight prominently in output
+    - Exit with success if generation completed
+    - Exit with failure if validation errors occurred
+
+  approval: pr_review
+  # pr_review: Create PR for human review before committing generated clients
+  # This ensures:
+  # - Generated code is reviewed for quality
+  # - Breaking changes are approved by team
+  # - Client versions are correct
+  # - Documentation is accurate
+  #
+  # Alternative: approval: none (for fully automated generation)
+  # Use "none" only if you have high confidence in generation quality
+  # and comprehensive automated testing for clients
+
+on_failure: warn
+# warn: Show generation failures but don't block workflow
+# This allows developers to continue working while client generation is investigated
+#
+# Alternative settings:
+# - block_context: Prevent file from being sent to model if generation fails
+# - block_send: Prevent context transmission if generation fails
+#
+# Recommendation: Keep as "warn" for development velocity
+# Failed generation should be fixed but shouldn't block API development
+
+# ============================================================================
+# CONFIGURATION VARIABLES
+# ============================================================================
+#
+# Set these in your environment or .kiro/config file:
+#
+# API_CONTRACT_FILE - Path to primary API contract file
+# Example: "api/openapi.yaml"
+#
+# TARGET_LANGUAGES - Comma-separated list of client languages
+# Example: "typescript,python,go"
+#
+# CLIENT_OUTPUT_DIR - Base directory for generated clients
+# Example: "clients/" or "sdk/"
+#
+# CLIENT_GENERATOR - Tool for client generation
+# Example: "openapi-generator", "graphql-codegen", "protoc", "custom"
+#
+# CLIENT_PACKAGE_NAME - Package name for generated clients
+# Example: "my-api-client"
+#
+# GENERATION_STRATEGY - How to regenerate clients
+# Options: "all" (default), "incremental"
+#
+# VERSION_STRATEGY - How to handle client versions
+# Options: "auto" (automatic bump), "manual" (no change)
+#
+# DETECT_BREAKING_CHANGES - Whether to analyze for breaking changes
+# Options: "true" (default), "false"
+#
+# REQUIRE_APPROVAL - Block generation if breaking changes detected
+# Options: "false" (default), "true"
+#
+# NOTIFY_CONSUMERS - Create issues/PRs in consumer repos
+# Options: "false" (default), "true"
+#
+# CHANGELOG_UPDATE - Update CHANGELOG automatically
+# Options: "true" (default), "false"
+#
+# ============================================================================
+# INTEGRATION WITH OTHER HOOKS
+# ============================================================================
+#
+# This hook works with:
+#
+# 1. cascade-api-change.yaml (deployment hook)
+#    - This hook generates clients
+#    - cascade-api-change.yaml updates downstream consumer dependencies
+#    - Together: complete API change propagation
+#
+# 2. validate-spec-constraints.yaml (stability hook)
+#    - Validates API contract against spec requirements
+#    - Runs before client generation
+#    - Ensures contracts are spec-compliant
+#
+# 3. update-docs.yaml (automation hook)
+#    - Updates API documentation when contracts change
+#    - Client generation + docs update = complete API change handling
+#
+# 4. require-approvals.yaml (deployment hook)
+#    - Requires approval for breaking API changes
+#    - Works with REQUIRE_APPROVAL configuration
+#    - Enforces governance for API evolution
+#
+# ============================================================================
+# BREAKING CHANGE DETECTION LOGIC
+# ============================================================================
+#
+# The model analyzes API changes to classify as breaking or non-breaking:
+#
+# BREAKING CHANGES (require major version bump):
+# - Removed endpoints (DELETE /api/users → removed)
+# - Removed required fields (User.email: required → removed)
+# - Type changes (age: string → age: number)
+# - Removed enum values (Status: [active, inactive, pending] → [active, inactive])
+# - Changed authentication (was public → now requires auth)
+# - Changed HTTP method (GET /users → POST /users)
+#
+# NON-BREAKING CHANGES (require minor version bump):
+# - New endpoints (POST /api/v2/users)
+# - New optional fields (User.phoneNumber?: string)
+# - New enum values (Status: [active] → [active, suspended])
+# - Relaxed validation (required field → optional field)
+#
+# BUG FIXES (require patch version bump):
+# - Documentation fixes
+# - Example corrections
+# - Type clarifications (no actual change to contract)
+#
+# ============================================================================
+# CLIENT GENERATION BEST PRACTICES
+# ============================================================================
+#
+# 1. Version Management:
+#    - Use semantic versioning (MAJOR.MINOR.PATCH)
+#    - Major: breaking changes
+#    - Minor: new features (backwards compatible)
+#    - Patch: bug fixes (no API changes)
+#
+# 2. Breaking Change Communication:
+#    - Always document breaking changes in CHANGELOG
+#    - Provide migration guide for consumers
+#    - Consider deprecation period before removal
+#    - Use API versioning (/v1, /v2) for major changes
+#
+# 3. Client Quality:
+#    - Generate type-safe clients with strong typing
+#    - Include inline documentation from API specs
+#    - Add request/response examples
+#    - Generate error handling helpers
+#
+# 4. Testing:
+#    - Generate client tests from API contract examples
+#    - Run integration tests against live API
+#    - Include contract testing (consumer-driven contracts)
+#
+# 5. Documentation:
+#    - Generate API reference docs from contracts
+#    - Include usage examples for each endpoint
+#    - Document authentication and authorization
+#    - Provide quickstart guide for new consumers
+#
+# ============================================================================
+# COMMON CLIENT GENERATORS
+# ============================================================================
+#
+# OpenAPI/Swagger:
+# - openapi-generator (supports 50+ languages)
+#   Install: npm install -g @openapitools/openapi-generator-cli
+#   Docs: https://openapi-generator.tech/
+#
+# - swagger-codegen (original, supports 40+ languages)
+#   Install: npm install -g swagger-codegen
+#
+# - oapi-codegen (Go-specific, high quality)
+#   Install: go install github.com/deepmap/oapi-codegen/cmd/oapi-codegen@latest
+#
+# GraphQL:
+# - graphql-codegen (official, supports TypeScript, Flow, etc.)
+#   Install: npm install -g @graphql-codegen/cli
+#   Docs: https://www.graphql-code-generator.com/
+#
+# - apollo-codegen (Apollo-specific)
+#   Install: npm install -g apollo
+#
+# gRPC/Protobuf:
+# - protoc (official Protocol Buffers compiler)
+#   Install: brew install protobuf (or platform-specific)
+#
+# - buf (modern Protobuf tool)
+#   Install: brew install bufbuild/buf/buf
+#   Docs: https://docs.buf.build/
+#
+# - grpc-tools (Node.js specific)
+#   Install: npm install -g grpc-tools
+#
+# ============================================================================
+# EXAMPLE WORKFLOWS
+# ============================================================================
+#
+# Workflow 1: OpenAPI → TypeScript + Python Clients
+# 1. Developer updates api/openapi.yaml
+# 2. This hook triggers
+# 3. Model detects non-breaking change (new endpoint)
+# 4. Generates TypeScript client → clients/typescript/ (version 1.2.0)
+# 5. Generates Python client → clients/python/ (version 1.2.0)
+# 6. Updates CHANGELOG with new endpoint details
+# 7. Creates PR with generated clients
+# 8. After PR merge, cascade-api-change.yaml updates consumer repos
+#
+# Workflow 2: GraphQL Schema → Multiple Clients with Breaking Change
+# 1. Developer removes field from GraphQL schema
+# 2. This hook triggers
+# 3. Model detects BREAKING CHANGE (removed field)
+# 4. If REQUIRE_APPROVAL=true, stops and requests approval
+# 5. After approval, generates clients for all languages
+# 6. Bumps major version (2.0.0 → 3.0.0)
+# 7. Creates PRs in consumer repos with migration guide
+# 8. Consumer teams review and update their code
+#
+# Workflow 3: Protobuf → Go + Java Clients
+# 1. Developer adds new RPC method to .proto file
+# 2. This hook triggers
+# 3. Model detects non-breaking change (new method)
+# 4. Runs: buf generate
+# 5. Generates Go client → clients/go/ (version 1.3.0)
+# 6. Generates Java client → clients/java/ (version 1.3.0)
+# 7. Updates documentation with new method
+# 8. Creates PR for review
+#
+# ============================================================================
+# DOWNSTREAM CONSUMER NOTIFICATION
+# ============================================================================
+#
+# When NOTIFY_CONSUMERS=true, the hook:
+#
+# 1. Identifies consumer repositories:
+#    - Searches for dependencies on client packages
+#    - Uses dependency graph from package managers
+#    - Checks GitHub Insights → Dependency graph
+#
+# 2. Creates GitHub issues in consumer repos:
+#    - Title: "API Client Update Available: ${CLIENT_PACKAGE}@${VERSION}"
+#    - Body includes: change summary, breaking changes, migration steps
+#    - Labels: "dependencies", "api-client-update"
+#    - Assigns to repo maintainers
+#
+# 3. For breaking changes, creates PRs:
+#    - Branch: "update-${CLIENT_PACKAGE}-${VERSION}"
+#    - Updates package dependency version
+#    - Includes migration guide in PR description
+#    - Marks as "needs review" for manual code updates
+#
+# 4. Sends notifications:
+#    - Slack message to #api-changes channel
+#    - Email to registered API consumers
+#    - PagerDuty alert for critical breaking changes
+#
+# ============================================================================
+# ROLLBACK PROCEDURE
+# ============================================================================
+#
+# If generated clients cause issues:
+#
+# 1. Revert the API contract change:
+#    - git revert <commit-with-contract-change>
+#    - Re-trigger this hook (will regenerate from reverted contract)
+#
+# 2. Manually rollback client versions:
+#    - Restore previous client code from git history
+#    - Revert version bumps in package.json/setup.py/etc.
+#    - Publish rolled-back version
+#
+# 3. Notify consumers of rollback:
+#    - Send notification via same channels as original update
+#    - Advise consumers to downgrade if they upgraded
+#    - Provide timeline for fix and re-release
+#
+# ============================================================================
+# COMPLIANCE AND AUDIT
+# ============================================================================
+#
+# This hook supports:
+# - API Governance: Enforces review for breaking changes
+# - Version Control: Tracks client version history
+# - Audit Trail: All generations logged with change summaries
+# - Consumer Impact Analysis: Documents which teams affected
+#
+# For regulatory environments:
+# - Set REQUIRE_APPROVAL=true for all changes
+# - Maintain CHANGELOG for audit purposes
+# - Track breaking changes with justification
+# - Document consumer notification timeline
+#
+# ============================================================================
+# PERFORMANCE AND SCALABILITY
+# ============================================================================
+#
+# For large APIs or many target languages:
+#
+# 1. Incremental generation:
+#    - Set GENERATION_STRATEGY=incremental
+#    - Only regenerate clients affected by changes
+#    - Reduces generation time for large APIs
+#
+# 2. Parallel generation:
+#    - Generate multiple language clients in parallel
+#    - Use xargs or parallel command
+#    - Speeds up multi-language generation
+#
+# 3. Caching:
+#    - Cache unchanged API sections
+#    - Only regenerate changed portions
+#    - Useful for massive APIs (hundreds of endpoints)
+#
+# 4. CI/CD optimization:
+#    - Run generation in background
+#    - Use webhook to notify when complete
+#    - Prevents blocking developer workflow
+#
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+#
+# "Generation command not found":
+# - Install client generator tool (openapi-generator, graphql-codegen, etc.)
+# - Verify tool is in PATH
+# - Check CLIENT_GENERATOR configuration
+#
+# "Breaking changes detected but no changes visible":
+# - Review API contract diff carefully
+# - Check for removed optional fields (still breaking for some consumers)
+# - Verify enum value removals
+# - Look for type changes in nested objects
+#
+# "Generated client fails type check":
+# - Check API contract syntax (valid OpenAPI/GraphQL/Protobuf)
+# - Verify generator version compatibility
+# - Review generator logs for errors
+# - Update generator to latest version
+#
+# "Downstream consumers not notified":
+# - Verify NOTIFY_CONSUMERS=true
+# - Check GitHub token permissions
+# - Ensure consumer repos are accessible
+# - Review notification configuration
+#
+# "Version bump incorrect":
+# - Review change classification (breaking vs non-breaking)
+# - Verify VERSION_STRATEGY=auto
+# - Check current version in package metadata
+# - Manually override if needed
+#
+# ============================================================================
+# RELATED DOCUMENTATION
+# ============================================================================
+#
+# - OpenAPI Specification: https://swagger.io/specification/
+# - GraphQL Schema Language: https://graphql.org/learn/schema/
+# - Protocol Buffers: https://developers.google.com/protocol-buffers
+# - Semantic Versioning: https://semver.org/
+# - API Evolution Best Practices: https://www.api-versioning.com/
+#
+# ============================================================================

@@ -1,0 +1,132 @@
+# PagerDuty MCP Configuration
+#
+# This MCP (Model Context Protocol) configuration connects PagerDuty incidents
+# to Kiro, enabling AI-assisted incident response and debugging. When you're 
+# investigating incidents, Kiro can retrieve relevant incident context, recent 
+# alerts, and historical patterns from PagerDuty to assist with root cause 
+# analysis and resolution suggestions.
+#
+# Use Cases:
+# - Incident Response: Retrieve recent incidents and alert history during debugging
+# - Root Cause Analysis: Surface historical patterns and similar past incidents
+# - Postmortems: Generate comprehensive incident reports with full context
+# - On-Call Support: Quick access to incident details and service health
+#
+# Addresses:
+# - Primary Concern 5: Cognitive Overload from Fragmented Tools
+#   (Consolidates PagerDuty data into Kiro context vs separate tool switching)
+#
+# Requirements Satisfied: 7.3, 7.6, 18.4
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. service_ids: Replace with your actual PagerDuty service IDs
+#    - Find service IDs in PagerDuty web UI: Services → [Your Service] → URL contains service ID
+#    - Format: P followed by 6-7 alphanumeric characters (e.g., P1ABC23)
+#
+# 2. api_key: Set PagerDuty API key (recommend using environment variable)
+#    - Generate key in PagerDuty: Configuration → API Access → Create API User Token
+#    - Permissions required: Read-only access is sufficient for context retrieval
+#
+# OPTIONAL CHANGES:
+# 3. include: Filter which incidents to retrieve (default: open_incidents)
+#    - Options: open_incidents, all_incidents, recent_incidents
+#    - Recommendation: Use open_incidents for active debugging, all_incidents for postmortems
+#
+# 4. time_range: How far back to search for incidents (default: 7 days)
+#    - Format: ISO 8601 duration (e.g., P7D = 7 days, P30D = 30 days)
+#    - Recommendation: 7 days for active incidents, 30 days for pattern analysis
+#
+# 5. urgency_filter: Filter by urgency level
+#    - Options: high, low, or omit for all urgencies
+#    - Recommendation: Use high during active incidents to reduce noise
+#
+# 6. team_ids: (Optional) Limit to specific teams
+#    - Find team IDs in PagerDuty: People → Teams → [Your Team] → URL contains team ID
+#
+# ENVIRONMENT-SPECIFIC SETTINGS:
+# - Monorepo: Configure per-service or per-team service_ids
+# - Multi-cloud: Include services from different environments (staging, prod)
+# - Enterprise: Use team_ids to scope to your organization's teams
+#
+# VALIDATION:
+# To verify your configuration is working:
+# 1. Check API key permissions in PagerDuty
+# 2. Verify service IDs exist and are active
+# 3. Test retrieval with: kiro mcp test pagerduty
+#
+# ============================================================================
+
+name: pagerduty-context
+provider: pagerduty
+
+config:
+  # PagerDuty API Configuration
+  # CUSTOMIZE: Set your API key (recommend using environment variable)
+  api_key: ${PAGERDUTY_API_KEY}  # Or replace with actual key (not recommended)
+  
+  # Service IDs to monitor
+  # CUSTOMIZE: Replace with your PagerDuty service IDs
+  # Find these in PagerDuty UI: Services → [Service Name] → Service ID in URL
+  service_ids:
+    - P1ABC23    # Example: Payment Processor Service
+    - P4DEF56    # Example: API Gateway Service
+    # - P7GHI89  # Add more services as needed
+  
+  # Incident Filter
+  # CUSTOMIZE: Change based on your use case
+  # Options: open_incidents (active only), all_incidents, recent_incidents
+  include: open_incidents
+  
+  # Time Range for Historical Incidents
+  # CUSTOMIZE: Adjust based on how far back you want to search
+  # Format: ISO 8601 duration (P7D = 7 days, P30D = 30 days)
+  time_range: P7D
+  
+  # Optional: Filter by urgency
+  # CUSTOMIZE: Uncomment and set to 'high' or 'low' if needed
+  # urgency_filter: high
+  
+  # Optional: Filter by team
+  # CUSTOMIZE: Uncomment and add your team IDs if needed
+  # team_ids:
+  #   - PT1XYZ9
+  #   - PT2ABC1
+  
+  # Optional: Include resolved incidents for pattern analysis
+  # CUSTOMIZE: Set to true for postmortems and trend analysis
+  include_resolved: false
+  
+  # Optional: Maximum number of incidents to retrieve
+  # CUSTOMIZE: Increase for comprehensive analysis, decrease for quick context
+  max_incidents: 50
+  
+  # Optional: Include incident notes and timeline
+  # CUSTOMIZE: Set to true for detailed debugging context
+  include_notes: true
+  include_timeline: true
+
+# Integration with Kiro Hooks
+# This MCP configuration can be used by hooks for incident-aware automation:
+#
+# Example: Post-incident learning hook
+# - When a PagerDuty incident is resolved, automatically:
+#   1. Retrieve incident context via this MCP configuration
+#   2. Analyze logs and metrics from the incident timeframe
+#   3. Generate spec constraint updates to prevent recurrence
+#   4. Create postmortem draft with AI-suggested root cause
+#
+# See: toolkit/hooks/post-incident-learning.yaml for implementation
+
+# Security Notes:
+# - Store API keys in environment variables, not in this file
+# - Use read-only API tokens (write access not required for context retrieval)
+# - Restrict service_ids to only the services your team owns
+# - Consider using team-scoped tokens in enterprise environments
+#
+# For more information on MCP integrations:
+# - See: docs/guides/aws-integration.md (MCP section)
+# - See: Kiro Tactical Guide.md (Section 5: Cognitive Overload)

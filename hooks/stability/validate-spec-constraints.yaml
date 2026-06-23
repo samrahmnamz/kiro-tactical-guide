@@ -1,0 +1,616 @@
+# Stability Hook: Validate Spec Constraints
+#
+# PURPOSE: Verify generated code satisfies all spec requirements and constraints.
+#          Ensures AI-generated code adheres to defined specifications before commit.
+#          Prevents spec violations from reaching version control or production.
+#
+# REQUIREMENTS ADDRESSED:
+# - 4.3: Verify generated code satisfies spec constraints before commit
+# - 8.4: Specs as source of truth - fix spec, not prompt
+# - 15.2: Clear customization points with examples
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Set SPEC_DIR to match your spec directory location:
+#    - Default Kiro structure: .kiro/specs/ or specs/
+#    - Custom locations: docs/specs/, design/, requirements/
+#    - Monorepo: packages/*/specs/, services/*/specs/
+#
+# 2. Set SOURCE_DIR to match your source code location:
+#    - Typical patterns: src/, lib/, app/, pkg/
+#    - Adjust based on repository structure
+#
+# 3. Configure spec file naming convention:
+#    - Default: [service-name].spec.md matches src/[service-name]/
+#    - Alternative: specs/[feature].md matches src/features/[feature]/
+#    - Set SPEC_NAMING_PATTERN below
+#
+# OPTIONAL CHANGES:
+# 4. Constraint validation depth:
+#    - BASIC: Check for obvious violations (missing required functions, wrong types)
+#    - STANDARD: Validate contracts, constraints, and test expectations (default)
+#    - COMPREHENSIVE: Include design decisions and integration requirements
+#
+# 5. Validation scope:
+#    - CHANGED_FILES_ONLY: Validate only recently changed files (fast)
+#    - SERVICE_SCOPE: Validate entire service when any file changes (thorough)
+#    - Set VALIDATION_SCOPE below
+#
+# 6. Failure handling:
+#    - on_failure: warn (default) - Report violations but allow continuation
+#    - on_failure: block_context - Prevent file from model on violations
+#    - on_failure: block_send - Prevent transmission on violations
+#
+# VALIDATION:
+# - Create a spec with explicit constraints
+# - Generate code that violates constraints
+# - Save code and verify hook detects violations
+# - Fix code to satisfy constraints, verify hook passes
+#
+# EXAMPLES:
+#
+# Example 1: Service with Security Constraints
+# Spec: specs/payment-processor.spec.md
+# Constraint: "All payment data must be encrypted at rest using AES-256"
+# Violation: Storing payment data in DynamoDB without encryption enabled
+# Detection: Hook flags missing encryption configuration
+#
+# Example 2: API with Performance Constraints
+# Spec: specs/rate-limiter.spec.md
+# Constraint: "Response time must be < 100ms for 95th percentile"
+# Violation: Synchronous Redis calls in critical path
+# Detection: Hook identifies blocking I/O that violates latency constraint
+#
+# Example 3: Feature with Test Expectations
+# Spec: specs/authentication.spec.md
+# Test Expectation: "✗ Invalid token → 401 Unauthorized"
+# Violation: Function returns 500 on invalid token
+# Detection: Hook identifies missing negative case handling
+#
+# ============================================================================
+
+name: validate-spec-constraints
+description: |
+  Validates that generated code satisfies all requirements defined in specs.
+  
+  Checks:
+  - Contract adherence (APIs, interfaces, events match spec)
+  - Constraint satisfaction (security, performance, compliance requirements)
+  - Test expectation coverage (✓ positive cases, ✗ negative cases)
+  - Design decision alignment (implementation matches documented rationale)
+  - Integration requirements (dependencies, golden spec compliance)
+  
+  Benefits:
+  - Catch spec violations before commit
+  - Ensure spec-driven development discipline
+  - Prevent rework from misaligned implementations
+  - Maintain traceability: code → spec → requirements
+  
+  Addresses Primary Concern #2: AI Destabilizing Delivery
+  - Prevents untested/unvalidated code from reaching production
+  - Enforces explicit constraints from spec
+  - Reduces change failure rate through spec compliance
+  
+  Addresses Primary Concern #6: AI-Generated Code Causing Rework
+  - Fix spec, not prompt (spec as source of truth)
+  - Eliminates prompt iteration rework
+  - Ensures first-pass quality through spec alignment
+
+on:
+  fileEdited:
+    # CUSTOMIZE: Adjust to match your source code structure
+    paths:
+      # Source code files (implementation)
+      - "src/**/*.ts"
+      - "src/**/*.tsx"
+      - "src/**/*.js"
+      - "src/**/*.jsx"
+      - "lib/**/*.ts"
+      - "lib/**/*.js"
+      - "app/**/*.py"
+      - "src/**/*.py"
+      - "pkg/**/*.go"
+      - "internal/**/*.go"
+      - "src/**/*.rs"
+      - "src/**/*.java"
+      - "src/**/*.cs"
+      
+      # Infrastructure as Code (should match infra specs)
+      - "infra/**/*.ts"
+      - "infrastructure/**/*.tf"
+      - "cdk/**/*.ts"
+      - "cloudformation/**/*.yaml"
+      - "cloudformation/**/*.yml"
+      
+      # Configuration files (if spec defines config constraints)
+      - "config/**/*.yaml"
+      - "config/**/*.yml"
+      - "config/**/*.json"
+
+run:
+  agent: sonnet
+  # Uses model for semantic understanding of specs and code alignment
+  
+  task: |
+    You are a spec compliance validator. Your job is to verify that code satisfies
+    all requirements, constraints, and expectations defined in the corresponding specification.
+    
+    ============================================================================
+    VALIDATION METHODOLOGY
+    ============================================================================
+    
+    1. SPEC DISCOVERY
+       - Locate the spec file corresponding to changed code
+       - Naming patterns:
+         * specs/[service-name].spec.md for src/[service-name]/
+         * .kiro/specs/[feature-name]/design.md for features
+         * specs/[component].md for lib/[component]/
+       - If multiple specs could apply, validate against all
+       - If no spec found, report: "⚠️  No spec found for changed files"
+    
+    2. SPEC PARSING
+       Extract these sections from spec:
+       - Intent: High-level purpose and goals
+       - Contracts: APIs, interfaces, events, schemas
+       - Constraints: Non-negotiable requirements
+         * Security (encryption, auth, no secrets in logs)
+         * Performance (latency, throughput, resource limits)
+         * Compliance (regulatory, audit trail, data residency)
+         * Integration (dependency contracts, golden spec alignment)
+       - Test Expectations: ✓ must pass, ✗ must be rejected
+       - Design Decisions: Rationale for architectural choices
+       - Rollback Plan (for production services)
+    
+    3. CODE ANALYSIS
+       For each changed file, verify:
+       
+       a) CONTRACT ADHERENCE
+          - API endpoints match spec (routes, methods, parameters)
+          - Function signatures match documented interfaces
+          - Event schemas match spec definitions
+          - Data models align with specified structure
+          
+          Example violation:
+          Spec: POST /api/payments with { amount, currency, token }
+          Code: POST /api/payment with { value, type, card }
+          → Contract mismatch: endpoint name, parameter names
+       
+       b) CONSTRAINT SATISFACTION
+          Security constraints:
+          - Encryption: Is data encrypted as specified?
+          - Auth: Are authentication/authorization checks present?
+          - Secrets: Are secrets in environment/vault, not hardcoded?
+          - Logging: Is PII excluded from logs as required?
+          - IAM: Do policies follow principle of least privilege?
+          
+          Performance constraints:
+          - Latency: Are operations async/non-blocking where required?
+          - Throughput: Are rate limits and backpressure implemented?
+          - Resources: Are memory/CPU bounds respected?
+          - Timeouts: Are all external calls properly timeout-bounded?
+          
+          Compliance constraints:
+          - Audit trail: Are all required events logged?
+          - Data residency: Is data stored in correct regions?
+          - Retention: Are retention policies implemented?
+          - Approval: Are change authorization checks present?
+          
+          Example violation:
+          Spec: "All payment data must be encrypted at rest using AES-256"
+          Code: DynamoDB table without encryption enabled
+          → Security constraint violation: missing encryption
+       
+       c) TEST EXPECTATION COVERAGE
+          - ✓ Positive cases: Are success paths handled correctly?
+          - ✗ Negative cases: Are error conditions properly rejected?
+          - Edge cases: Are boundary conditions addressed?
+          
+          Example violation:
+          Spec: "✗ Invalid token → 401 Unauthorized"
+          Code: Returns 500 Internal Server Error on invalid token
+          → Test expectation violation: wrong error code
+       
+       d) DESIGN DECISION ALIGNMENT
+          - Implementation approach matches documented rationale
+          - No undocumented architectural changes
+          - Trade-offs from spec are preserved
+          
+          Example violation:
+          Spec: "Using Redis for rate limiting (vs in-memory) to support multi-instance"
+          Code: In-memory rate limiter implementation
+          → Design decision violation: doesn't support documented scaling requirement
+       
+       e) INTEGRATION REQUIREMENTS
+          - Dependencies used match spec
+          - Golden spec references are followed
+          - Version constraints are satisfied
+          
+          Example violation:
+          Spec: "Authentication follows golden/auth-pattern.spec.md (OAuth2/OIDC)"
+          Code: Implements custom JWT authentication
+          → Integration requirement violation: not following golden spec
+    
+    4. VIOLATION SEVERITY
+       Classify findings by severity:
+       
+       CRITICAL (Must fix before commit):
+       - Security constraint violations (encryption, auth, secrets)
+       - Contract breaking changes (API signature changes)
+       - Compliance requirement violations (audit, data residency)
+       - Test expectation failures (✓ cases not handled, ✗ cases not rejected)
+       
+       HIGH (Should fix, but not blocking):
+       - Performance constraint violations (latency, throughput)
+       - Design decision misalignment (different approach than documented)
+       - Missing error handling for edge cases
+       - Integration requirement violations (dependency mismatches)
+       
+       MEDIUM (Review and consider):
+       - Minor API differences (parameter name variations)
+       - Incomplete test coverage (missing some edge cases)
+       - Logging/observability gaps
+       
+       LOW (Informational):
+       - Style differences from spec examples
+       - Documentation gaps
+       - Optional feature not implemented
+    
+    ============================================================================
+    OUTPUT FORMAT
+    ============================================================================
+    
+    For each finding, report:
+    
+    ```
+    [SEVERITY] Violation Type
+    File: <file path>
+    Line: <line number if identifiable>
+    Spec: <spec file path>
+    Section: <spec section (Contracts/Constraints/Test Expectations)>
+    
+    Violation: <specific problem>
+    Spec Requirement: <exact text from spec>
+    Code Issue: <what the code does instead>
+    Impact: <why this matters>
+    
+    Recommendation: <how to fix>
+    
+    Example fix:
+    <code showing corrected implementation>
+    ```
+    
+    ============================================================================
+    EXAMPLE OUTPUTS
+    ============================================================================
+    
+    CRITICAL Example (Security Constraint):
+    ```
+    [CRITICAL] Missing Encryption Configuration
+    File: infra/payment-stack.ts
+    Line: 45
+    Spec: specs/payment-processor.spec.md
+    Section: Constraints - Security
+    
+    Violation: DynamoDB table created without encryption at rest
+    Spec Requirement: "All payment data must be encrypted at rest using AES-256"
+    Code Issue: Table definition missing encryption configuration
+    Impact: PCI DSS violation - payment data stored unencrypted
+    
+    Recommendation: Enable encryption at rest with customer-managed KMS key
+    
+    Example fix:
+    const paymentTable = new dynamodb.Table(this, 'PaymentTable', {
+      tableName: 'payments',
+      partitionKey: { name: 'paymentId', type: dynamodb.AttributeType.STRING },
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,  // ← Add this
+      encryptionKey: props.encryptionKey,                     // ← Add this
+      pointInTimeRecovery: true
+    });
+    ```
+    
+    CRITICAL Example (Contract Mismatch):
+    ```
+    [CRITICAL] API Contract Violation
+    File: src/api/payments.ts
+    Line: 23
+    Spec: specs/payment-processor.spec.md
+    Section: Contracts
+    
+    Violation: API endpoint name doesn't match spec
+    Spec Requirement: "POST /api/payments with request body { amount: number, currency: string, token: string }"
+    Code Issue: Endpoint defined as POST /api/payment (singular)
+    Impact: Client integration will fail - endpoint not found
+    
+    Recommendation: Change endpoint to match spec exactly
+    
+    Example fix:
+    router.post('/api/payments', async (req, res) => {  // ← Change /payment to /payments
+      const { amount, currency, token } = req.body;
+      // ... implementation
+    });
+    ```
+    
+    CRITICAL Example (Test Expectation):
+    ```
+    [CRITICAL] Negative Case Not Rejected
+    File: src/auth/verify-token.ts
+    Line: 67
+    Spec: specs/authentication.spec.md
+    Section: Test Expectations
+    
+    Violation: Invalid token handling returns wrong error code
+    Spec Requirement: "✗ Invalid token → 401 Unauthorized"
+    Code Issue: Returns 500 Internal Server Error when token is invalid
+    Impact: Breaks API contract - clients won't know it's an auth issue
+    
+    Recommendation: Return 401 status code for authentication failures
+    
+    Example fix:
+    try {
+      const decoded = jwt.verify(token, SECRET_KEY);
+      return decoded;
+    } catch (error) {
+      if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+        throw new UnauthorizedError('Invalid or expired token');  // ← Returns 401
+      }
+      throw error;  // Re-throw unexpected errors
+    }
+    ```
+    
+    HIGH Example (Performance Constraint):
+    ```
+    [HIGH] Blocking Operation in Critical Path
+    File: src/rate-limiter/check.ts
+    Line: 34
+    Spec: specs/rate-limiter.spec.md
+    Section: Constraints - Performance
+    
+    Violation: Synchronous Redis call violates latency requirement
+    Spec Requirement: "Response time must be < 100ms for 95th percentile"
+    Code Issue: Using blocking redis.get() in request path
+    Impact: Latency spikes when Redis is slow, violates SLA
+    
+    Recommendation: Use async/await pattern for Redis operations
+    
+    Example fix:
+    // Before (blocking):
+    const current = redis.get(key);
+    
+    // After (async):
+    const current = await redis.getAsync(key);
+    ```
+    
+    HIGH Example (Design Decision):
+    ```
+    [HIGH] Implementation Doesn't Match Design Decision
+    File: src/rate-limiter/limiter.ts
+    Line: 12
+    Spec: specs/rate-limiter.spec.md
+    Section: Design Decisions
+    
+    Violation: Using in-memory rate limiting instead of Redis
+    Spec Requirement: "Using Redis for rate limiting (vs in-memory) to support multi-instance deployment"
+    Code Issue: Implemented with in-memory Map data structure
+    Impact: Rate limiting will not work correctly across multiple instances
+    
+    Recommendation: Implement Redis-based rate limiting as documented in spec
+    ```
+    
+    MEDIUM Example (Missing Error Handling):
+    ```
+    [MEDIUM] Incomplete Edge Case Handling
+    File: src/payments/process.ts
+    Line: 89
+    Spec: specs/payment-processor.spec.md
+    Section: Test Expectations
+    
+    Violation: Missing handling for amount = 0
+    Spec Requirement: "✗ Amount ≤ 0 → 400 Bad Request"
+    Code Issue: No validation for zero or negative amounts
+    Impact: Could process invalid payments
+    
+    Recommendation: Add amount validation before processing
+    
+    Example fix:
+    if (amount <= 0) {
+      throw new BadRequestError('Payment amount must be positive');
+    }
+    ```
+    
+    NO VIOLATIONS Example:
+    ```
+    ✅ Spec Validation Passed
+    
+    Validated against: specs/notification-service.spec.md
+    
+    Checks performed:
+    ✓ Contract adherence: API endpoints match spec
+    ✓ Security constraints: Encryption, auth, no secrets in logs
+    ✓ Performance constraints: Async operations, timeouts configured
+    ✓ Test expectations: All ✓ and ✗ cases handled correctly
+    ✓ Design decisions: Implementation matches documented approach
+    ✓ Integration requirements: Dependencies align with spec
+    
+    Changed files satisfy all spec requirements.
+    ```
+    
+    NO SPEC Example:
+    ```
+    ⚠️  No Spec Found for Changed Files
+    
+    Changed files:
+    - src/utils/string-helpers.ts
+    - src/utils/date-helpers.ts
+    
+    Searched for specs in:
+    - specs/utils.spec.md (not found)
+    - .kiro/specs/utilities/ (not found)
+    - specs/string-helpers.spec.md (not found)
+    
+    Recommendation:
+    If this is a new feature or service, create a spec first:
+    1. Define Intent, Contracts, Constraints
+    2. Document Test Expectations (✓ and ✗ cases)
+    3. Run hook again to validate implementation
+    
+    If this is utility code that doesn't need a spec, ignore this warning.
+    
+    Reminder: Spec-first workflow prevents rework
+    - Write spec → Generate code → Validate against spec
+    - Fix spec, not prompt (spec is source of truth)
+    ```
+    
+    ============================================================================
+    CONTEXT FOR VALIDATION
+    ============================================================================
+    
+    Changed files: ${KIRO_CHANGED_FILES}
+    
+    Analyze these files and locate corresponding specs:
+    - Check specs/ directory
+    - Check .kiro/specs/ directory
+    - Check for [service-name].spec.md patterns
+    - Check for design.md in feature directories
+    
+    Configuration:
+    - Validation depth: STANDARD (contracts, constraints, test expectations)
+    - Validation scope: CHANGED_FILES_ONLY (fast validation)
+    - Spec directory: specs/ and .kiro/specs/
+    
+    If no spec is found, report it but don't block - utility code may not need specs.
+    
+    Focus on CRITICAL and HIGH severity violations.
+    Be specific about file locations, line numbers, and exact spec requirements.
+    
+    When reporting violations:
+    1. Quote exact text from spec (not paraphrased)
+    2. Show exact code that violates it
+    3. Explain business/technical impact
+    4. Provide concrete fix with code example
+
+  approval: none
+  # Automated validation - no human approval needed
+
+on_failure: warn
+# warn: Report violations but allow continuation
+# Developers can see violations and decide whether to fix before commit
+# Change to "block_context" for stricter enforcement (blocks file from model on violations)
+
+# ============================================================================
+# CONFIGURATION OPTIONS
+# ============================================================================
+#
+# SPEC_DIR: Where specs are located
+#   Default: specs/, .kiro/specs/
+#   Monorepo: packages/*/specs/, services/*/specs/
+#   Custom: docs/specs/, design/
+#
+# SPEC_NAMING_PATTERN: How specs map to code
+#   service-match: specs/[service].spec.md → src/[service]/
+#   feature-match: specs/[feature].md → src/features/[feature]/
+#   exact-match: specs/path/to/file.spec.md → src/path/to/file.ts
+#
+# VALIDATION_DEPTH:
+#   BASIC: Check contracts only (API signatures, function interfaces)
+#   STANDARD: Contracts + Constraints + Test Expectations (default)
+#   COMPREHENSIVE: All sections including Design Decisions and Integration Requirements
+#
+# VALIDATION_SCOPE:
+#   CHANGED_FILES_ONLY: Validate only recently modified files (fast)
+#   SERVICE_SCOPE: Validate entire service when any file changes (thorough)
+#   FULL_REPO: Validate all code against all specs (CI/CD use case)
+#
+# ============================================================================
+# INTEGRATION WITH OTHER HOOKS
+# ============================================================================
+#
+# This hook works together with:
+# - test-on-save.yaml: Tests validate behavior, this validates spec alignment
+# - validate-against-golden.yaml: Golden specs define org standards
+# - require-spec-coverage.yaml: Ensures every file has a corresponding spec
+# - lint-on-save.yaml: Style/format checks complement spec validation
+#
+# Workflow:
+# 1. scan-secrets.yaml: Local security check (no model)
+# 2. validate-spec-constraints.yaml: Spec compliance check (model-assisted)
+# 3. test-on-save.yaml: Run tests to verify behavior (local execution)
+# 4. CI/CD pipeline: Final safety net with additional checks
+#
+# ============================================================================
+# SPEC-FIRST DEVELOPMENT WORKFLOW
+# ============================================================================
+#
+# Correct workflow (spec-first):
+# 1. Write or update spec with requirements and constraints
+# 2. Generate or modify code to implement spec
+# 3. Hook validates code against spec
+# 4. If violations found: fix code OR update spec (if requirements changed)
+# 5. Tests validate behavior matches spec expectations
+#
+# Anti-pattern (prompt iteration):
+# 1. Generate code from prompt
+# 2. Code doesn't work as expected
+# 3. Iterate on prompt multiple times
+# 4. Result: rework, inconsistent behavior, no traceability
+#
+# Key principle: Fix the spec, not the prompt
+# - Spec is source of truth
+# - Code derives from spec
+# - Violations indicate code doesn't match spec (not that spec is wrong)
+# - If requirements change, update spec first, then regenerate code
+#
+# ============================================================================
+# PERFORMANCE NOTES
+# ============================================================================
+#
+# Typical validation time:
+# - Small file (< 200 lines): 3-5 seconds
+# - Medium file (200-500 lines): 5-10 seconds
+# - Large file (> 500 lines): 10-20 seconds
+#
+# Optimization tips:
+# - Use CHANGED_FILES_ONLY scope for fast iteration
+# - Use SERVICE_SCOPE for thorough validation before commit
+# - Use FULL_REPO only in CI/CD pipeline
+# - Consider caching spec analysis results
+#
+# ============================================================================
+# COMPLIANCE AND AUDIT
+# ============================================================================
+#
+# This hook supports:
+# - Traceability: Every code change traceable to spec requirement
+# - Quality gates: Automated spec compliance before code review
+# - Documentation: Specs serve as living documentation
+# - Audit trail: Validation results logged for each save
+# - Regulatory: Demonstrates requirements adherence (SOX, ISO 27001)
+#
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+#
+# "No spec found" warnings:
+# - Create spec first before implementing new features
+# - Check SPEC_DIR configuration matches your structure
+# - Verify spec naming convention (service.spec.md, feature.md, etc.)
+#
+# False positives (flagged but code is correct):
+# - Spec may be outdated - update spec to match new requirements
+# - Spec may be too strict - revise constraint to be more flexible
+# - Add whitelist comment in spec: <!-- validation:allow reason: xyz -->
+#
+# False negatives (violations not detected):
+# - Increase VALIDATION_DEPTH to COMPREHENSIVE
+# - Add more specific constraints to spec
+# - Ensure spec sections are properly formatted (## Constraints, etc.)
+#
+# Performance issues:
+# - Reduce VALIDATION_SCOPE to CHANGED_FILES_ONLY
+# - Use VALIDATION_DEPTH: BASIC for faster checks
+# - Consider splitting large files into smaller modules
+#
+# ============================================================================
+

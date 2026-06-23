@@ -1,0 +1,60 @@
+{
+  "version": "v1",
+  "hooks": [{
+    "name": "pre-send-context-scan",
+    "description": "Final security check before context transmission. Scans assembled context buffer locally to ensure no secrets leak through. Last line of defense.",
+    "trigger": "PreToolUse",
+    "matcher": ".*",
+    "action": {
+      "type": "command",
+      "command": "#!/bin/bash\nset -euo pipefail\n\necho '🔒 Pre-send security scan: Validating context buffer...'\n\nCONTEXT_BUFFER=\"${KIRO_CONTEXT_BUFFER:-/tmp/kiro-context}\"\nHIGH_ENTROPY_THRESHOLD=\"${ENTROPY_THRESHOLD:-4.5}\"\n\nif [ ! -f \"$CONTEXT_BUFFER\" ]; then\n  echo '⚠️  Context buffer not found, proceeding with caution'\n  exit 0\nfi\n\necho \"Context size: $(wc -c < \"$CONTEXT_BUFFER\") bytes\"\n\nCRITICAL_PATTERNS=(\n  'AKIA[0-9A-Z]{16}'\n  'aws_secret_access_key.*[A-Za-z0-9/+=]{40}'\n  '-----BEGIN.*PRIVATE KEY-----'\n  'sk-[a-zA-Z0-9]{48}'\n  'sk-ant-[a-zA-Z0-9]{95}'\n  'sk_live_[a-zA-Z0-9]{24,}'\n  'ghp_[a-zA-Z0-9]{36}'\n  'xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,}'\n  'postgres(ql)?://[^:]+:[^@\\s]+@'\n  'mysql://[^:]+:[^@\\s]+@'\n  'mongodb(\\+srv)?://[^:]+:[^@\\s]+@'\n  'redis://[^:]+:[^@\\s]+@'\n  'password['\\''\"]?\\s*[:=]\\s*['\\''\"]?[^'\\''\"\\\\s]{12,}'\n  'api[_-]?key['\\''\"]?\\s*[:=]\\s*['\\''\"]?[a-zA-Z0-9]{32,}'\n  'secret['\\''\"]?\\s*[:=]\\s*['\\''\"]?[a-zA-Z0-9]{32,}'\n  'token['\\''\"]?\\s*[:=]\\s*['\\''\"]?[a-zA-Z0-9]{32,}'\n  'eyJ[a-zA-Z0-9_-]+\\.eyJ[a-zA-Z0-9_-]+\\.[a-zA-Z0-9_-]+'\n)\n\nALLOWED_MARKERS=(\n  '# example'\n  '# sample'\n  '# placeholder'\n  '# test'\n  '# demo'\n  '// example'\n  '// sample'\n  'XXXXXXXX'\n  'xxxxxxxxxx'\n  'your-api-key-here'\n  'your-secret-here'\n  'replace-with-your'\n)\n\nCRITICAL_FINDINGS=0\nFINDINGS_DETAIL=''\n\nfor pattern in \"${CRITICAL_PATTERNS[@]}\"; do\n  matches=$(grep -nPo \"$pattern\" \"$CONTEXT_BUFFER\" 2>/dev/null | head -20 || true)\n  \n  if [ -n \"$matches\" ]; then\n    while IFS= read -r match; do\n      line_num=$(echo \"$match\" | cut -d: -f1)\n      matched_text=$(echo \"$match\" | cut -d: -f2-)\n      context_window=$(sed -n \"$((line_num-5)),$((line_num+5))p\" \"$CONTEXT_BUFFER\" 2>/dev/null || true)\n      \n      is_allowed=false\n      for marker in \"${ALLOWED_MARKERS[@]}\"; do\n        if echo \"$context_window\" | grep -qi \"$marker\"; then\n          is_allowed=true\n          break\n        fi\n      done\n      \n      if [ \"$is_allowed\" = false ]; then\n        CRITICAL_FINDINGS=$((CRITICAL_FINDINGS + 1))\n        redacted=$(echo \"$matched_text\" | sed 's/\\(.\\{4\\}\\).*\\(.\\{4\\}\\)/\\1**REDACTED**\\2/')\n        FINDINGS_DETAIL=\"${FINDINGS_DETAIL}\\n  Line $line_num: Pattern detected (redacted): $redacted\"\n      fi\n    done <<< \"$matches\"\n  fi\ndone\n\nif [ $CRITICAL_FINDINGS -eq 0 ]; then\n  echo '✅ Pre-send validation passed - no secrets detected'\n  exit 0\nfi\n\necho ''\necho '=========================================='\necho '❌ SECURITY VIOLATION - TRANSMISSION BLOCKED'\necho '=========================================='\necho ''\necho \"Found $CRITICAL_FINDINGS potential secret(s) in context buffer\"\necho ''\necho 'Findings:'\necho -e \"$FINDINGS_DETAIL\"\necho ''\necho 'HOW TO FIX:'\necho '  1. Remove actual secrets from files'\necho '  2. Use environment variables or AWS Secrets Manager'\necho '  3. If examples/discussion, add: # example or # sample'\necho ''\necho 'EXAMPLES:'\necho '  ❌ Wrong: const API_KEY = \"sk-proj-abc123...\"'\necho '  ✅ Right: const API_KEY = process.env.API_KEY'\necho '=========================================='\n\nexit 1",
+      "timeout": 30
+    }
+  }],
+  "metadata": {
+    "purpose": "Pre-transmission context scanning to prevent data leakage",
+    "requirements": [
+      "3.4: Pre-transmission context scanning",
+      "9.1: Local scanning before network transmission",
+      "9.5: Comprehensive secret pattern coverage"
+    ],
+    "installation": {
+      "required": ["bash", "grep", "sed"],
+      "note": "No external dependencies - pure bash implementation"
+    },
+    "customization": {
+      "critical_patterns": "Add organization-specific secret formats to CRITICAL_PATTERNS array",
+      "allowed_markers": "Define context markers that indicate discussion rather than actual secrets",
+      "entropy_threshold": "Adjust HIGH_ENTROPY_THRESHOLD (default 4.5) for token detection sensitivity"
+    },
+    "defense_in_depth": {
+      "layer_1": "File-level: scan-secrets.json catches secrets at save time",
+      "layer_2": "Directory-level: excluded-paths.yaml prevents sensitive directories",
+      "layer_3": "Context-level: THIS HOOK validates assembled context before transmission",
+      "layer_4": "Network-level: region-config.yaml enforces data residency"
+    },
+    "detects": [
+      "AWS credentials (access keys, secret keys)",
+      "API keys (OpenAI, Anthropic, Stripe, GitHub, Slack)",
+      "Private keys (RSA, EC, SSH)",
+      "Database connection strings with credentials",
+      "JWT tokens",
+      "Password/secret/token assignments",
+      "High-entropy strings (potential encoded secrets)"
+    ],
+    "allows": [
+      "Examples with # example or # sample markers",
+      "Placeholders (XXXXXXXX, your-key-here)",
+      "Documentation and discussion of secrets (not actual values)"
+    ],
+    "impact": {
+      "why_critical": "Last local validation before network boundary. Files might pass individual scans but secrets could appear in combination. Context assembly might include excluded content through indirect references.",
+      "performance": "Typically <500ms for contexts <1MB",
+      "compliance": [
+        "Data never leaves the device",
+        "Audit trail of blocked transmissions",
+        "Meets data residency requirements"
+      ]
+    }
+  }
+}

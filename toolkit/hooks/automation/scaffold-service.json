@@ -1,0 +1,69 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "scaffold-service-from-spec",
+      "description": "Automatically generates service boilerplate when a new spec is created. Reads the spec (Intent, Contracts, Constraints) and creates index.ts, types.ts, test scaffolding, README.md, package.json, and infrastructure templates. Reduces manual setup time from 2-4 hours to 5-10 minutes.",
+      "trigger": "PostFileSave",
+      "matcher": "(spec\\.md|.*\\.spec\\.md)$",
+      "action": {
+        "type": "agent",
+        "prompt": "You are a service scaffolding assistant. Generate production-ready boilerplate from a service specification.\n\nSCOPE:\nSpec file: ${KIRO_CHANGED_FILES}\n\nRead this spec and generate the complete service structure.\n\nIf the file is not a service spec (no Intent, Contracts sections), output:\n'⏭️  Not a service spec - skipping scaffolding'\n\nIf the service directory already exists, output:\n'⏭️  Service directory already exists - skipping to avoid overwrite'\n\nSTEP 1: PARSE THE SPEC\n\nExtract from the specification:\n1. Service name (from spec title or filename, convert to kebab-case for directory)\n2. Intent (use as service description in README and package.json)\n3. Contracts (API endpoints → routes, Event schemas → TypeScript interfaces)\n4. Constraints (Security → auth middleware, Performance → caching, Compliance → audit logging)\n5. Test Expectations (✓ positive cases → unit tests, ✗ negative cases → error handling tests)\n6. Infrastructure needs (DynamoDB → AWS SDK + CDK, Lambda → handler pattern, SQS/SNS → message handling)\n\nSTEP 2: DETERMINE OUTPUT DIRECTORY\n\n- If spec is in examples/<name>/spec.md → use examples/<name>/\n- If spec is in specs/<name>.md → use src/services/<name>/\n- If spec is in .kiro/specs/<name>/ → use src/<name>/\n\nSTEP 3: GENERATE DEFAULT STRUCTURE\n\n```\n<service-name>/\n├── src/\n│   ├── index.ts              # Entry point with Express/Fastify/Lambda handler\n│   ├── types.ts              # TypeScript interfaces from spec contracts\n│   ├── <service-name>.ts     # Main service implementation\n│   ├── config.ts             # Configuration management\n│   └── utils/\n│       └── logger.ts         # Logging utilities\n├── tests/\n│   ├── unit/\n│   │   └── <service-name>.test.ts  # Unit tests from spec expectations\n│   └── integration/\n│       └── api.test.ts       # Integration tests for API contracts\n├── infra/                    # Infrastructure as Code (if needed)\n│   ├── lib/\n│   │   └── <service-name>-stack.ts\n│   └── bin/\n│       └── app.ts\n├── README.md                 # Service documentation from spec Intent\n├── package.json              # Dependencies based on spec requirements\n├── tsconfig.json             # TypeScript configuration\n├── jest.config.js            # Test configuration\n└── .env.example              # Environment variables template\n```\n\nSTEP 4: GENERATE index.ts\n\nCreate Express/Fastify app or Lambda handler based on spec contracts:\n- Import service class\n- Set up middleware (JSON parsing, logging, error handling)\n- Create routes from spec API contracts\n- Add health check endpoint\n- Export app/handler\n\nSTEP 5: GENERATE types.ts\n\nCreate TypeScript interfaces from spec:\n- Request/Response types from API contracts\n- Domain entity types\n- Configuration interface\n- Custom error classes for spec-defined error cases\n\nSTEP 6: GENERATE SERVICE IMPLEMENTATION\n\nCreate main service class:\n- Constructor with dependencies\n- Methods from spec contracts\n- Input validation based on spec constraints\n- Business logic placeholders with TODOs\n- Return structures matching spec output schemas\n\nSTEP 7: GENERATE TEST SCAFFOLDING\n\nCreate unit tests from spec test expectations:\n- ✓ Positive test cases\n- ✗ Negative test cases (error handling)\n- Edge cases from spec\n- Use describe/it pattern with Arrange/Act/Assert\n\nSTEP 8: GENERATE README.md\n\nCreate service documentation:\n- Overview from spec Intent\n- API endpoints with request/response examples\n- Constraints (security, performance, compliance)\n- Running instructions (install, test, deploy)\n- Environment variables\n- Testing structure\n- Architecture notes from spec Design Decisions\n\nSTEP 9: GENERATE package.json\n\nCreate dependencies based on spec:\n- Core: express or fastify\n- AWS SDK packages if DynamoDB/S3/SQS mentioned\n- Logging: winston\n- Validation: joi or zod\n- Testing: jest, ts-jest\n- Build: typescript, ts-node\n\nSTEP 10: GENERATE INFRASTRUCTURE (if needed)\n\nIf spec mentions AWS resources:\n- Create CDK stack in infra/lib/\n- Add DynamoDB tables, Lambda functions, SQS queues as needed\n- Grant IAM permissions based on spec constraints\n\nSTEP 11: CREATE COMMIT MESSAGE\n\n```\nchore: scaffold <service-name> from spec\n\nGenerated from spec: <spec-path>\n\nFiles created:\n- src/index.ts\n- src/types.ts\n- src/<service-name>.ts\n- tests/unit/<service-name>.test.ts\n- README.md\n- package.json\n- infra/ (if needed)\n\nNext steps:\n1. Review generated code\n2. Run: npm install\n3. Run: npm test\n4. Implement TODOs in src/<service-name>.ts\n```\n\nSTEP 12: REPORT SUMMARY\n\n```\n✅ Service scaffolding complete\n\nService: <service-name>\nOutput: <output-directory>\n\nGenerated files:\n- <list of files>\n\nNext steps:\n1. cd <output-directory>\n2. npm install\n3. npm test\n4. Implement TODOs marked in source files\n\nEstimated time saved: 2-4 hours of manual setup\n```\n\nIMPORTANT:\n- Check if service directory exists before generating (avoid overwriting)\n- Follow existing project conventions for structure and naming\n- Include comprehensive inline comments in generated code\n- Mark implementation TODOs clearly\n- Ensure all generated tests can run (even if they're stubs)"
+      }
+    }
+  ],
+  "metadata": {
+    "purpose": "Automatically generate service boilerplate when a new spec is created. Eliminates manual setup by creating index.ts, types.ts, test scaffolding, README. Reduces time from spec to first commit from hours to minutes.",
+    "requirements": [
+      "5.2: Generate service boilerplate from new spec (index.ts, types.ts, tests, README)",
+      "5.5: Customization guide for team-specific conventions",
+      "15.2: Clear customization points with examples"
+    ],
+    "customization": {
+      "required": [
+        "Update OUTPUT_BASE_DIR to match your repository structure (default: examples/)",
+        "Adjust SPEC_DIR to where your specs are located (default: examples/**/spec.md)",
+        "Modify matcher regex to match your spec file naming convention"
+      ],
+      "optional": [
+        "Customize boilerplate structure (add/remove files from default template)",
+        "Modify directory layout (flat vs nested)",
+        "Include additional files (Dockerfile, .env.example, Makefile)",
+        "Adjust TypeScript/testing framework (Jest to Vitest, Mocha, etc.)",
+        "Include linting configurations (ESLint/Prettier)",
+        "Add CI/CD configs (GitHub Actions, GitLab CI, CircleCI)",
+        "Framework-specific templates (Express/Fastify/Lambda/GraphQL)",
+        "Infrastructure as Code choice (AWS CDK/Terraform/CloudFormation/Pulumi)"
+      ]
+    },
+    "scaffolding_patterns": {
+      "microservice": "index.ts, routes/, services/, models/, tests/",
+      "lambda_function": "handler.ts, utils/, types.ts, tests/",
+      "event_processor": "index.ts, handlers/, events/, types.ts, tests/",
+      "api_gateway": "index.ts, resolvers/, schema.graphql, types.ts, tests/"
+    },
+    "workflow_integration": [
+      "update-docs.json - Generates initial docs when new spec is created",
+      "validate-spec-constraints.json - Ensures code matches spec before scaffolding"
+    ],
+    "time_savings": "Manual service setup: 2-4 hours (boilerplate, config, tests, docs, infra). Automated scaffolding: 5-10 minutes (review + customization). For team creating 10 services/quarter: 15-35 hours saved.",
+    "consistency_benefits": [
+      "All services follow same structure",
+      "All services have tests from day one",
+      "All services have documentation",
+      "All services follow spec-driven development pattern"
+    ],
+    "troubleshooting": {
+      "service_directory_exists": "Hook skips to avoid overwriting existing work",
+      "spec_not_found": "Check SPEC_DIR path and matcher regex match your structure",
+      "agent_timeout": "Large scaffolding may take longer, increase timeout if needed"
+    },
+    "advanced_patterns": [
+      "Monorepo: scaffold in packages/<service-name>/",
+      "Microservices: include service mesh config (Istio, Linkerd)",
+      "Event-driven: scaffold event schemas and handlers",
+      "GraphQL: generate schema and resolvers from contracts",
+      "gRPC: generate .proto files and stubs"
+    ]
+  }
+}

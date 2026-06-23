@@ -1,0 +1,55 @@
+Test Context Buffer for Pre-Send Scanning
+==========================================
+
+This file contains various test patterns to validate context buffer scanning.
+
+1. High Entropy Strings (potential secrets):
+-------------------------------------------
+Random base64: dGhpcyBpcyBhIHRlc3Qgc3RyaW5nIGZvciBiYXNlNjQgZW5jb2Rpbmc=
+Random hex: 3f7a9b2c8d1e4f6a0b5c9d2e8f1a3b4c5d6e7f8a9b0c1d2e3f4a5b6c
+API-like key: sk_test_************************************************
+
+2. Real Secret Patterns (REDACTED):
+------------------------
+AWS Access Key: AKIA****************MPLE
+GitHub Token: ghp_****************************************
+Stripe Secret: sk_live_************************************************
+
+3. Connection Strings (REDACTED):
+---------------------
+PostgreSQL: postgresql://myuser:******************@prod-db.example.com:5432/maindb
+MongoDB: mongodb+srv://dbadmin:***********@cluster0.abc123.mongodb.net/production
+Redis: redis://:***********************@redis-prod.cache.amazonaws.com:6379
+
+4. Private Keys (REDACTED):
+---------------
+-----BEGIN PRIVATE KEY-----
+[REDACTED FOR SECURITY - This is a test file demonstrating secret patterns]
+-----END PRIVATE KEY-----
+
+5. Safe Content (should NOT be flagged):
+----------------------------------------
+- Configuration placeholders: YOUR_API_KEY_HERE
+- Environment variable references: ${DATABASE_URL}
+- Documentation examples: "Set your API key to sk_test_..."
+- Comments with redacted values: // API Key: ***REDACTED***
+
+6. High Entropy False Positives:
+--------------------------------
+Git commit hash: 3f7a9b2c8d1e4f6a0b5c9d2e8f1a3b4c5d6e7f8a
+UUID: 550e8400-e29b-41d4-a716-446655440000
+Base64 encoded image data (first 50 chars): data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA
+
+7. Context Variables (should be monitored):
+-------------------------------------------
+File path mentions: /home/user/.ssh/id_rsa
+Sensitive directories: /etc/ssl/private/, ~/.aws/credentials
+Production indicators: PROD_DATABASE, production-secrets
+
+8. Compliance Sensitive Data:
+-----------------------------
+Credit Card (test): ****-****-****-9010
+SSN (fake): ***-**-6789
+Email: customer@example.com
+
+End of test context buffer.

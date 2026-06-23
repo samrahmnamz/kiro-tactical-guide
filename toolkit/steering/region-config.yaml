@@ -1,0 +1,596 @@
+# Steering Rule: Regional Configuration for Data Residency
+#
+# PURPOSE: Define allowed AWS regions for Bedrock model access and enforce data
+#          residency compliance for GDPR, FSI, healthcare, and other regulated industries.
+#          Controls WHERE model inference happens and WHERE data can be processed.
+#
+# REQUIREMENTS ADDRESSED:
+# - 3.6: Data residency controls with allowed Bedrock regions
+# - 9.3: GDPR and FSI data residency requirements
+# - 15.4: Examples for US-only, EU-only, and multi-region configurations
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# NO INSTALLATION REQUIRED - Configuration file only
+#
+# HOW TO USE:
+# 1. Place this file in your .kiro/ directory: .kiro/steering/region-config.yaml
+# 2. Kiro will automatically enforce these region restrictions
+# 3. Model API calls will ONLY be made to allowed regions
+# 4. Data will NOT leave specified geographic boundaries
+#
+# CUSTOMIZATION:
+# 1. CHOOSE your regulatory profile:
+#    - See examples below for: US-only, EU-only, APAC-only, Global
+#    - Uncomment ONE profile that matches your requirements
+#    - Comment out the others
+#
+# 2. CONFIGURE guardrails:
+#    - PII filtering: Enable for GDPR, HIPAA, or PCI DSS compliance
+#    - Topic denial: Add industry-specific sensitive topics
+#    - Content filtering: Enable for regulated industries
+#
+# 3. VERIFY compliance:
+#    - Check configuration: kiro config validate
+#    - Test with sample data: Send context and verify region in logs
+#    - Audit trail: Enable logging to track all model API calls
+#
+# VALIDATION:
+# - Verify region enforcement: Check API logs for endpoint regions
+# - Test PII filtering: Send sample PII, verify it's filtered out
+# - Compliance report: Generate audit report of all model calls
+#
+# EXAMPLES:
+# Financial Services (US-only):
+#   allowed_regions: ["us-east-1"]
+#   pii_filter: enabled
+#   topic_denial: ["customer financial details", "account balances"]
+#
+# Healthcare (HIPAA):
+#   allowed_regions: ["us-east-1", "us-west-2"]
+#   pii_filter: enabled
+#   topic_denial: ["patient health records", "PHI", "medical diagnoses"]
+#
+# European Union (GDPR):
+#   allowed_regions: ["eu-west-1", "eu-central-1"]
+#   pii_filter: enabled
+#   data_residency: "EU"
+# ============================================================================
+
+name: data-residency
+description: |
+  Regional configuration and data residency controls for AI model access.
+  Enforces compliance with:
+    - GDPR (General Data Protection Regulation) - EU data sovereignty
+    - CCPA (California Consumer Privacy Act) - US state privacy law
+    - FSI Regulations (OCC, FDIC, Fed, SEC) - Financial services data residency
+    - HIPAA (Health Insurance Portability and Accountability Act)
+    - Data sovereignty requirements for government and defense sectors
+  
+  Controls three critical security layers:
+    1. Network-level: Which AWS regions can be called for model inference
+    2. Content-level: PII detection and filtering in requests/responses
+    3. Policy-level: Topic and content restrictions for regulated industries
+
+# ============================================================================
+# BEDROCK REGIONAL CONFIGURATION
+# ============================================================================
+bedrock_config:
+  
+  # ==========================================================================
+  # AWS REGIONS - Define where model inference can happen
+  # ==========================================================================
+  # CRITICAL: Data sent to Bedrock is processed in these regions
+  # Choose regions based on your regulatory requirements
+  #
+  # AVAILABLE BEDROCK REGIONS:
+  # - us-east-1 (N. Virginia)      - Primary US region, lowest latency East Coast
+  # - us-west-2 (Oregon)           - Primary US region, lowest latency West Coast
+  # - eu-west-1 (Ireland)          - Primary EU region (GDPR compliant)
+  # - eu-central-1 (Frankfurt)     - Secondary EU region (GDPR compliant)
+  # - ap-southeast-1 (Singapore)   - Primary APAC region
+  # - ap-northeast-1 (Tokyo)       - Secondary APAC region
+  # - ca-central-1 (Canada)        - Canadian data residency
+  # - ap-south-1 (Mumbai)          - India data residency
+  # - eu-west-2 (London)           - UK data residency (post-Brexit)
+  # - sa-east-1 (São Paulo)        - South America data residency
+  #
+  # Check latest available regions: aws bedrock list-foundation-models
+  # ==========================================================================
+  
+  # DEFAULT CONFIGURATION: US-only (most common for US-based companies)
+  allowed_regions:
+    - us-east-1              # Primary US East
+    - us-west-2              # Primary US West
+  
+  # UNCOMMENT one profile below and COMMENT OUT the default above:
+  
+  # --------------------------------------------------------------------------
+  # PROFILE: European Union (GDPR Compliant)
+  # USE WHEN: Company operates in EU, processes EU citizen data, GDPR applies
+  # DATA RESIDENCY: All data stays within EU borders
+  # --------------------------------------------------------------------------
+  # allowed_regions:
+  #   - eu-west-1            # Ireland (primary EU region)
+  #   - eu-central-1         # Frankfurt (secondary EU region)
+  #   - eu-west-2            # London (if UK operations post-Brexit)
+  #   - eu-west-3            # Paris (if France-specific requirements)
+  #   - eu-north-1           # Stockholm (if Nordic operations)
+  
+  # --------------------------------------------------------------------------
+  # PROFILE: Financial Services - US Only (FSI Regulations)
+  # USE WHEN: Bank, fintech, insurance, payment processor in US
+  # REGULATIONS: OCC, FDIC, Federal Reserve, SEC, state banking laws
+  # DATA RESIDENCY: US-only, prefer single region for audit simplicity
+  # --------------------------------------------------------------------------
+  # allowed_regions:
+  #   - us-east-1            # N. Virginia ONLY
+  #   # Single region reduces compliance complexity for FSI
+  #   # All model calls, logs, and data stay in one auditable location
+  
+  # --------------------------------------------------------------------------
+  # PROFILE: Healthcare (HIPAA Compliant)
+  # USE WHEN: Hospital, healthcare provider, health tech startup
+  # REGULATIONS: HIPAA Privacy Rule, Security Rule
+  # DATA RESIDENCY: US-only, BAA (Business Associate Agreement) required
+  # --------------------------------------------------------------------------
+  # allowed_regions:
+  #   - us-east-1            # N. Virginia
+  #   - us-west-2            # Oregon
+  #   # NOTE: Requires BAA with AWS for HIPAA compliance
+  #   # Reference: https://aws.amazon.com/compliance/hipaa-compliance/
+  
+  # --------------------------------------------------------------------------
+  # PROFILE: Asia-Pacific (APAC)
+  # USE WHEN: APAC-based company, APAC customer data
+  # DATA RESIDENCY: Keep data within APAC regions
+  # --------------------------------------------------------------------------
+  # allowed_regions:
+  #   - ap-southeast-1       # Singapore
+  #   - ap-northeast-1       # Tokyo
+  #   - ap-south-1           # Mumbai
+  #   - ap-southeast-2       # Sydney
+  
+  # --------------------------------------------------------------------------
+  # PROFILE: Canada (PIPEDA Compliant)
+  # USE WHEN: Canadian company or processing Canadian citizen data
+  # REGULATIONS: PIPEDA (Personal Information Protection and Electronic Documents Act)
+  # DATA RESIDENCY: Canada-only
+  # --------------------------------------------------------------------------
+  # allowed_regions:
+  #   - ca-central-1         # Canada (Montreal)
+  
+  # --------------------------------------------------------------------------
+  # PROFILE: Multi-National Corporation (Global Operations)
+  # USE WHEN: Global company with regional data residency requirements
+  # APPROACH: Allow multiple regions, enforce region by team/project
+  # --------------------------------------------------------------------------
+  # allowed_regions:
+  #   - us-east-1            # Americas
+  #   - us-west-2            # Americas
+  #   - eu-west-1            # Europe
+  #   - eu-central-1         # Europe
+  #   - ap-southeast-1       # APAC
+  #   - ap-northeast-1       # APAC
+  #   # NOTE: Use IAM policies or team-specific configs to restrict
+  #   # which teams can use which regions (not all teams need global access)
+  
+  # --------------------------------------------------------------------------
+  # PROFILE: Government / Defense (FedRAMP, IL4/IL5)
+  # USE WHEN: US Government contractor, defense sector
+  # REGULATIONS: FedRAMP, ITAR, DFARS
+  # DATA RESIDENCY: GovCloud regions ONLY
+  # --------------------------------------------------------------------------
+  # allowed_regions:
+  #   - us-gov-west-1        # AWS GovCloud (US-West)
+  #   - us-gov-east-1        # AWS GovCloud (US-East)
+  #   # NOTE: Requires FedRAMP Authority to Operate (ATO)
+  #   # Reference: https://aws.amazon.com/compliance/fedramp/
+  
+  # ==========================================================================
+  # REGION SELECTION BEHAVIOR
+  # ==========================================================================
+  # When multiple regions are allowed, Kiro will:
+  # 1. Prefer the region geographically closest to the developer (lowest latency)
+  # 2. Failover to next allowed region if primary is unavailable
+  # 3. Log which region was used for audit purposes
+  #
+  # To force a specific region (no failover):
+  #   allowed_regions: ["us-east-1"]  # Single region only
+  
+  # ==========================================================================
+  # MODEL AVAILABILITY BY REGION
+  # ==========================================================================
+  # Not all models available in all regions. Current as of 2024:
+  # - Anthropic Claude (Sonnet, Opus): us-east-1, us-west-2, eu-west-1, eu-central-1
+  # - Amazon Nova: us-east-1, us-west-2, eu-west-1
+  # - Stability AI (Stable Diffusion): us-east-1, us-west-2
+  #
+  # Check current availability:
+  #   aws bedrock list-foundation-models --region <region>
+  #
+  # If model unavailable in allowed region, Kiro will:
+  # - ERROR and block the operation (safe default)
+  # - Log which model was requested and why it was blocked
+  # - Suggest fallback models available in allowed regions
+  
+  # ==========================================================================
+  # GUARDRAILS - Content Filtering and PII Protection
+  # ==========================================================================
+  guardrails:
+    
+    # ------------------------------------------------------------------------
+    # PII (Personally Identifiable Information) Filtering
+    # ------------------------------------------------------------------------
+    # Detects and filters:
+    # - Names (first, last, full names)
+    # - Email addresses
+    # - Phone numbers (all formats)
+    # - SSNs (Social Security Numbers)
+    # - Credit card numbers
+    # - Street addresses
+    # - Dates of birth
+    # - IP addresses
+    # - Driver's license numbers
+    # - Passport numbers
+    # - Bank account numbers
+    #
+    # WHEN TO ENABLE:
+    # - GDPR compliance (EU): Required
+    # - CCPA compliance (California): Recommended
+    # - HIPAA (Healthcare): Required (for PHI)
+    # - PCI DSS (Payment cards): Required
+    # - Financial Services: Recommended
+    # - Default for regulated industries: Enabled
+    # - Startups/non-regulated: Can disable for convenience
+    #
+    pii_filter: enabled        # enabled | disabled
+    
+    # Action when PII detected:
+    # - redact: Replace PII with [REDACTED] (safe default)
+    # - block: Reject the entire request (strictest)
+    # - anonymize: Replace with fake data (e.g., "John Doe", "555-1234")
+    pii_action: redact         # redact | block | anonymize
+    
+    # PII detection sensitivity:
+    # - high: Aggressive detection, more false positives (safest)
+    # - medium: Balanced (default)
+    # - low: Only high-confidence PII detected
+    pii_sensitivity: medium    # high | medium | low
+    
+    # ------------------------------------------------------------------------
+    # Topic Denial List
+    # ------------------------------------------------------------------------
+    # Block requests or responses containing these topics.
+    # Useful for preventing model from discussing:
+    # - Company confidential information
+    # - Customer-specific sensitive data
+    # - Regulated topics specific to your industry
+    #
+    # HOW IT WORKS:
+    # - Model analyzes request/response for topic mentions
+    # - If denied topic detected, request is blocked or response is filtered
+    # - Developer sees: "Request blocked: contains denied topic 'X'"
+    #
+    topic_denial:
+      # FINANCIAL SERVICES EXAMPLES:
+      - "customer account balances"
+      - "customer transaction history"
+      - "internal trading strategies"
+      - "non-public financial information"
+      - "customer credit scores"
+      - "loan application details"
+      
+      # HEALTHCARE EXAMPLES:
+      # - "patient diagnoses"
+      # - "patient treatment plans"
+      # - "patient medical records"
+      # - "patient test results"
+      # - "patient billing information"
+      
+      # GENERAL CORPORATE EXAMPLES:
+      - "employee compensation details"
+      - "employee personal information"
+      - "company financials not yet public"
+      - "acquisition targets"
+      - "unreleased product roadmap"
+      - "customer private data"
+      - "internal security vulnerabilities"
+      
+      # TECHNOLOGY / SAAS EXAMPLES:
+      # - "customer API keys"
+      # - "customer database credentials"
+      # - "customer infrastructure details"
+      # - "unreleased feature specifications"
+      
+      # CUSTOMIZE: Add your industry-specific sensitive topics
+      # Examples:
+      # - "proprietary algorithms"
+      # - "trade secrets"
+      # - "contract terms with [SPECIFIC PARTNER]"
+    
+    # Topic denial action:
+    # - block: Reject request entirely (strictest)
+    # - filter: Remove denied topics from response
+    # - warn: Log warning but allow (audit mode)
+    topic_action: block        # block | filter | warn
+    
+    # ------------------------------------------------------------------------
+    # Content Filtering
+    # ------------------------------------------------------------------------
+    # AWS Bedrock built-in content filters for:
+    # - Hate speech
+    # - Insults
+    # - Sexual content
+    # - Violence
+    # - Misconduct (illegal activities)
+    #
+    # WHEN TO ENABLE:
+    # - Regulated industries: Enabled (safe default)
+    # - Customer-facing AI: Enabled (protect brand)
+    # - Internal development tools: Can disable
+    # - Code generation only: Can disable
+    #
+    content_filter: enabled    # enabled | disabled
+    
+    # Filter strength:
+    # - high: Block any potentially inappropriate content (safest)
+    # - medium: Balanced (default, blocks clearly inappropriate)
+    # - low: Only block extreme content
+    content_filter_strength: medium  # high | medium | low
+    
+    # ------------------------------------------------------------------------
+    # Custom Word Filters
+    # ------------------------------------------------------------------------
+    # Block requests/responses containing specific words or phrases.
+    # More granular than topic denial.
+    #
+    # USE CASES:
+    # - Block specific product codenames
+    # - Block competitor mentions (for customer-facing AI)
+    # - Block internal project names
+    # - Block specific customer names
+    #
+    word_filters:
+      # EXAMPLE: Block internal product codenames
+      # - "Project Phoenix"      # Unreleased product codename
+      # - "Acme Corp"            # Specific customer name
+      # - "internal-api-v2"      # Internal system name
+      
+      # CUSTOMIZE: Add your company-specific terms
+      # Example:
+      # - "your-secret-project-name"
+      # - "your-customer-name-here"
+    
+    # Word filter action:
+    word_filter_action: block  # block | redact | warn
+    
+    # ------------------------------------------------------------------------
+    # Response Validation
+    # ------------------------------------------------------------------------
+    # Validate model responses before returning to developer.
+    # Ensures responses don't leak sensitive information.
+    #
+    response_validation:
+      # Check responses for PII (even if filtered in request)
+      check_pii: enabled       # enabled | disabled
+      
+      # Check responses for denied topics
+      check_topics: enabled    # enabled | disabled
+      
+      # Block responses containing secrets (API keys, tokens, passwords)
+      # Uses same patterns as scan-secrets.yaml
+      check_secrets: enabled   # enabled | disabled
+      
+      # Action when validation fails:
+      # - block: Don't return response to developer
+      # - redact: Remove offending content from response
+      # - warn: Log warning but return response (audit mode)
+      validation_action: block # block | redact | warn
+
+# ============================================================================
+# DATA RESIDENCY DOCUMENTATION
+# ============================================================================
+# Document your data residency requirements for audit purposes
+data_residency:
+  
+  # Primary jurisdiction (for regulatory reporting)
+  jurisdiction: "United States"  # United States | European Union | Canada | APAC | etc.
+  
+  # Regulatory frameworks that apply to your organization
+  regulations:
+    - "CCPA"                   # California Consumer Privacy Act
+    # - "GDPR"                 # General Data Protection Regulation (EU)
+    # - "HIPAA"                # Health Insurance Portability and Accountability Act
+    # - "PCI DSS"              # Payment Card Industry Data Security Standard
+    # - "SOC 2"                # Service Organization Control 2
+    # - "PIPEDA"               # Personal Information Protection (Canada)
+    # - "LGPD"                 # Lei Geral de Proteção de Dados (Brazil)
+    # - "FedRAMP"              # Federal Risk and Authorization Management Program
+  
+  # Data classification (what type of data might reach the model)
+  data_classification:
+    - "source code"            # Source code (company proprietary)
+    - "configuration files"    # Infrastructure configuration
+    - "technical documentation" # Technical docs, specs, architecture
+    # - "customer data"        # Customer PII or business data
+    # - "financial data"       # Financial information
+    # - "health data"          # PHI/health information
+    # - "payment data"         # Credit card, bank account info
+  
+  # Cross-border data transfer mechanisms (for international orgs)
+  transfer_mechanisms:
+    # - "Standard Contractual Clauses (SCCs)"  # GDPR
+    # - "Privacy Shield (invalidated)"         # EU-US (no longer valid)
+    # - "Binding Corporate Rules (BCRs)"       # GDPR
+    # - "APEC CBPR"                            # Asia-Pacific
+  
+  # Audit and compliance contacts
+  compliance_contact:
+    team: "Security & Compliance"
+    email: "security@example.com"
+    dpo_email: "dpo@example.com"  # Data Protection Officer (GDPR)
+
+# ============================================================================
+# LOGGING AND AUDIT TRAIL
+# ============================================================================
+# Configure logging for compliance and security auditing
+logging:
+  
+  # Enable audit logging (required for regulated industries)
+  audit_enabled: true          # true | false
+  
+  # What to log:
+  audit_events:
+    - "model_request"          # Every request to Bedrock
+    - "region_selection"       # Which region was used
+    - "pii_detection"          # When PII is detected and filtered
+    - "topic_denial"           # When denied topic is blocked
+    - "guardrail_trigger"      # When any guardrail blocks content
+    - "region_violation"       # Attempted use of non-allowed region
+  
+  # Where to send logs:
+  # - cloudwatch: AWS CloudWatch Logs
+  # - s3: S3 bucket (for long-term retention)
+  # - splunk: Splunk HEC endpoint
+  # - datadog: Datadog logs API
+  log_destination: cloudwatch  # cloudwatch | s3 | splunk | datadog | local
+  
+  # Log retention (for compliance)
+  retention_days: 2555         # 7 years (SOX requirement)
+  # Common retention periods:
+  # - 90 days: Minimum for security investigation
+  # - 365 days: 1 year (many compliance frameworks)
+  # - 2555 days: 7 years (SOX, financial services)
+  
+  # PII in logs (be careful!)
+  # - never: Never log PII (safest, GDPR-compliant)
+  # - hashed: Log hashed PII for correlation
+  # - redacted: Log with PII redacted ([REDACTED])
+  pii_in_logs: never           # never | hashed | redacted
+
+# ============================================================================
+# PERFORMANCE AND FAILOVER
+# ============================================================================
+performance:
+  
+  # Region selection strategy when multiple regions allowed
+  # - latency: Choose region with lowest latency (default)
+  # - random: Randomly distribute across allowed regions
+  # - round_robin: Distribute evenly across allowed regions
+  # - primary: Always use first allowed region, failover only if unavailable
+  selection_strategy: latency  # latency | random | round_robin | primary
+  
+  # Timeout for model requests (seconds)
+  request_timeout: 30          # 30 seconds default
+  # Increase if using large context windows or complex prompts
+  
+  # Retry behavior when region is unavailable
+  retry_on_region_failure: true  # true | false
+  max_retries: 2               # Try up to 2 other allowed regions
+  
+  # Failover to non-allowed region in emergency?
+  # - never: Always respect region restrictions (safe default)
+  # - manual_override: Allow with explicit approval (log to audit)
+  # - automatic: Failover if all allowed regions down (NOT RECOMMENDED)
+  emergency_failover: never    # never | manual_override | automatic
+
+# ============================================================================
+# METADATA
+# ============================================================================
+version: "1.0"
+last_updated: "2024-06-17"
+last_reviewed_by: "Security Team"
+next_review_date: "2024-09-17"  # Quarterly review recommended
+
+# ============================================================================
+# COMPLIANCE NOTES
+# ============================================================================
+#
+# GDPR (European Union):
+# - Data residency: Use EU regions only (eu-west-1, eu-central-1)
+# - PII filtering: Required (enable pii_filter)
+# - Data Processing Agreement: Ensure AWS BAA/DPA in place
+# - Data subject rights: Document how to handle deletion requests
+# - Reference: https://aws.amazon.com/compliance/gdpr-center/
+#
+# HIPAA (Healthcare - United States):
+# - Data residency: US regions only (us-east-1, us-west-2)
+# - BAA Required: Sign Business Associate Agreement with AWS
+# - PHI Protection: Enable pii_filter for Protected Health Information
+# - Audit logging: Required (enable audit_enabled)
+# - Reference: https://aws.amazon.com/compliance/hipaa-compliance/
+#
+# PCI DSS (Payment Card Industry):
+# - Cardholder data: NEVER send to model (use excluded-paths.yaml)
+# - PII filtering: Enable for cardholder names, addresses
+# - Audit logging: Required
+# - Network segmentation: Use dedicated AWS account for PCI environment
+# - Reference: https://aws.amazon.com/compliance/pci-dss-level-1-faqs/
+#
+# FSI (Financial Services - United States):
+# - OCC, FDIC, Federal Reserve oversight
+# - Data residency: US-only recommended (us-east-1 single region best)
+# - Change management: Document and approve all config changes
+# - Audit trail: 7-year retention (SOX requirement)
+# - Incident response: Document process for data breach
+#
+# SOC 2 (Service Organization Control):
+# - Security: Enable all guardrails
+# - Availability: Configure failover and retry
+# - Confidentiality: Enable PII filtering and topic denial
+# - Processing integrity: Enable response validation
+# - Privacy: Document data handling in data_residency section
+#
+# FedRAMP (US Government):
+# - Regions: GovCloud ONLY (us-gov-west-1, us-gov-east-1)
+# - ATO Required: Obtain Authority to Operate
+# - Impact level: Choose IL2, IL4, IL5, or IL6 based on data classification
+# - Continuous monitoring: Enable comprehensive audit logging
+# - Reference: https://aws.amazon.com/compliance/fedramp/
+#
+# CCPA (California Consumer Privacy Act):
+# - Applies to California residents
+# - PII filtering: Recommended
+# - Data subject rights: Document deletion and access processes
+# - Do not sell: Ensure no data sent to third parties (Bedrock is first-party AWS)
+#
+# DEFENSE IN DEPTH:
+# Region configuration is ONE layer. Also use:
+# 1. excluded-paths.yaml - Prevent sensitive files from reaching model
+# 2. scan-secrets.yaml - Scan files locally before save
+# 3. pre-send-scan.yaml - Final validation before transmission
+# 4. IAM policies - Restrict which teams can use which regions
+# 5. Network controls - VPC endpoints, PrivateLink for Bedrock
+#
+# TESTING YOUR CONFIGURATION:
+# 1. Send test request with PII → verify it's filtered
+# 2. Try non-allowed region → verify it's blocked
+# 3. Send denied topic → verify it's rejected
+# 4. Check audit logs → verify all events are logged
+# 5. Compliance audit → Generate report for auditors
+#
+# MAINTENANCE:
+# - Review quarterly (every 3 months)
+# - Update after any regulatory change
+# - Update after any security incident
+# - Update when new Bedrock regions become available
+# - Share across teams (version control this file!)
+#
+# MONITORING AND ALERTS:
+# Set up alerts for:
+# - Guardrail triggers (may indicate data leak attempt)
+# - Region violations (someone trying non-allowed region)
+# - PII detection rate (if suddenly high, investigate)
+# - Failed requests (may indicate misconfiguration)
+#
+# INCIDENT RESPONSE:
+# If sensitive data reaches model despite controls:
+# 1. Immediately revoke API keys/credentials
+# 2. Review audit logs to determine scope
+# 3. Notify compliance team and DPO (if GDPR)
+# 4. Document in incident report
+# 5. Update steering rules to prevent recurrence
+# 6. Consider regulatory reporting (breach notification)
