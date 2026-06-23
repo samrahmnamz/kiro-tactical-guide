@@ -8,7 +8,24 @@ Concrete examples — actual specs, hooks, steering rules, and prompts — showi
 
 ---
 
+## Table of Contents
+
+1. [Security & Compliance Eating Engineering Time](#1-security--compliance-eating-engineering-time)
+2. [AI Destabilizing Delivery (Speed Without Stability)](#2-ai-destabilizing-delivery-speed-without-stability)
+   - 2.5. [Steering Files for Persistent AI Behavior Enforcement](#25-steering-files-for-persistent-ai-behavior-enforcement)
+3. [Deployment Velocity Gap](#3-deployment-velocity-gap)
+4. [AI Tools Leaking Sensitive Data](#4-ai-tools-leaking-sensitive-data)
+5. [FSI Regulatory Complexity](#5-fsi-regulatory-complexity)
+6. [Knowledge Loss When Engineers Leave](#6-knowledge-loss-when-engineers-leave)
+7. [Quick Reference: Kiro File Structure](#quick-reference-kiro-file-structure)
+8. [Secondary Concerns](#secondary-concerns)
+9. [Cost Visibility — Bedrock Spend per Team/Hook](#cost-visibility--bedrock-spend-per-teamhook)
+
+---
+
 ## 1. Security & compliance eating engineering time
+
+> **TL;DR:** Write specs that encode security constraints, use local secret scanning hooks, validate IAM policies automatically. Result: Security violations caught before they reach the model or production.
 
 **The data:**
 - 62% of teams rank security/compliance as their #1 challenge (DuploCloud 2026, 135+ CTOs)
@@ -53,11 +70,11 @@ Process credit card transactions via Stripe API and persist to DynamoDB.
     "name": "scan-secrets",
     "description": "Scan for secrets locally using gitleaks before any code is sent to the model",
     "trigger": "PostFileSave",
-    "matcher": "(src|infra)/.*",
+    "matcher": "(src|infra)/.*",  // Scan all source and infrastructure files
     "action": {
-      "type": "command",
+      "type": "command",  // Runs locally, not via AI agent
       "command": "gitleaks detect --source=\"${KIRO_CHANGED_FILE}\" --no-git --report-format=json --report-path=/tmp/gitleaks-report.json || (echo '⚠️  Secrets detected in ${KIRO_CHANGED_FILE}:' && cat /tmp/gitleaks-report.json | jq '.[] | .Description + \" at line \" + (.StartLine|tostring)' && exit 2)",
-      "timeout": 30000
+      "timeout": 30000  // 30 seconds max
     }
   }]
 }
@@ -109,6 +126,8 @@ Process credit card transactions via Stripe API and persist to DynamoDB.
 ---
 
 ## 2. AI destabilizing delivery (speed without stability)
+
+> **TL;DR:** Specs with explicit test expectations prevent AI shortcuts. Hooks run tests immediately, mutation testing catches weak tests, coverage enforcement prevents untested code. Result: AI-generated code that's both fast AND stable.
 
 **The data:**
 - 25% increase in AI adoption = 7.2% reduction in delivery stability (DORA 2025)
@@ -186,11 +205,11 @@ Rate-limit API requests per tenant to prevent abuse and ensure fair usage.
 **Why this prevents AI-induced instability:**
 - **Instant feedback loop**: AI generates code → hook runs tests in <10 seconds → failures caught before commit
 - **Spec coverage check**: Hook validates that negative test cases (✗) exist and pass, preventing "happy path only" AI implementations
-- **Reduces PR incidents by 60-80%**: Most AI-generated edge case failures are caught locally, never reach staging
+- **Reduces PR incidents**: Most AI-generated edge case failures are caught locally, never reach staging
 - **Eliminates prompt iteration**: Instead of 5 rounds of "try again but handle X", the spec constraints force correctness on first generation
 
 **Impact on DORA metrics:**
-- Change failure rate: 15% → <5% (elite threshold)
+- Change failure rate: moves toward elite threshold (<5%)
 - Lead time: unchanged (still fast) but quality gates passed
 - Recovery time: reduced because fewer incidents reach production
 
@@ -230,9 +249,9 @@ Rate-limit API requests per tenant to prevent abuse and ensure fair usage.
 - **Not on every save**: Too slow (2-5 minutes), use for validation checkpoints
 
 **Impact:**
-- Catches 40-60% of test gaps that lead to production incidents
-- Increases confidence in AI-generated test suites from 30% → 85%
-- Reduces "tests pass but production fails" incidents by 70%
+- Catches test gaps that lead to production incidents
+- Increases confidence in AI-generated test suites
+- Reduces "tests pass but production fails" incidents
 
 **The key principle: Humans define WHAT, AI implements HOW**
 
@@ -253,9 +272,7 @@ Example spec test expectations (human-authored):
 
 The spec test expectations become the contract. AI generates the test code, but if mutations survive, it means the AI didn't correctly implement the validation. This prevents the "both code and tests wrong in the same way" failure mode.
 
-### Hook: Enforce code coverage thresholds (prevents undertested AI code)
-
-**The coverage gap problem:** AI generates code quickly, but may generate tests that only cover happy paths. Without coverage enforcement, critical branches go untested.
+---
 
 ### Hook: Enforce code coverage thresholds (prevents undertested AI code)
 
@@ -354,13 +371,15 @@ jobs:
 ```
 
 **Impact on AI stability:**
-- **Before coverage enforcement**: AI generates code with 45-60% coverage, untested error paths cause production incidents
-- **After coverage enforcement**: Coverage threshold blocks PR → AI regenerates with missing tests → 85%+ coverage → fewer incidents
+- **Before coverage enforcement**: AI generates code with insufficient coverage, untested error paths cause production incidents
+- **After coverage enforcement**: Coverage threshold blocks PR → AI regenerates with missing tests → comprehensive coverage → fewer incidents
 - **Combined with mutation testing**: High confidence that AI-generated code is both tested (coverage) and correctly tested (mutations)
 
 ---
 
 ## 2.5. Steering Files for Persistent AI Behavior Enforcement
+
+> **TL;DR:** Steering files teach AI your team's standards (always included in context). Hooks validate the output. Together = defense in depth. Result: Consistent code generation with fewer hook failures.
 
 **The complementary approach:** Hooks react to events (file save, spec change). Steering files provide **persistent context** to the AI for every code generation, ensuring it always follows your team's standards.
 
@@ -373,265 +392,169 @@ jobs:
 
 **The key difference:** Hooks *validate* code after it's generated. Steering files *prevent* bad code from being generated in the first place.
 
-### Example 1: Code Standards Steering File
+---
 
-```markdown
-# .kiro/steering/code-standards.md
+### Complete Steering File Examples
 
-## Coding Standards for All AI-Generated Code
+Here are three complete, production-ready steering files you can copy directly into your `.kiro/steering/` directory. These are the actual patterns from this repository.
 
-### Rate Limiting
+For the full versions with additional patterns, see the complete files in `toolkit/steering/` in this repository.
+
+---
+
+#### Example 1: `.kiro/steering/code-standards.md`
+
+Copy this file as-is into your `.kiro/steering/` directory:
+
+```
+---
+inclusion: always
+---
+
+# Coding Standards for All AI-Generated Code
+
+## Rate Limiting
 - ALWAYS use sliding window algorithm, never fixed window
 - Reason: Fixed window allows burst traffic at window boundaries
-- Implementation: Use Redis sorted sets with ZREMRANGEBYSCORE
 
-### Error Handling
+## Error Handling
 - ALWAYS handle external service failures gracefully (fail-open with logging)
 - NEVER let unhandled exceptions crash the service
-- Pattern:
-  ```typescript
-  try {
-    const result = await externalService.call();
-    return result;
-  } catch (error) {
-    logger.error('External service failed', { error, service: 'externalService' });
-    return defaultValue; // Fail-open
-  }
-  ```
 
-### Redis Usage
+## Redis Usage
 - ALWAYS use connection pooling (ioredis cluster mode)
 - ALWAYS set command timeout (5 seconds default)
-- NEVER use blocking operations (BLPOP, BRPOP) in request handlers
-- Pattern:
-  ```typescript
-  const redis = new Redis.Cluster([nodes], {
-    enableReadyCheck: true,
-    maxRetriesPerRequest: 3,
-    retryStrategy: (times) => Math.min(times * 50, 2000)
-  });
-  ```
+- NEVER use blocking operations in request handlers
 
-### Logging
-- NEVER log PII (credit cards, SSNs, emails, phone numbers)
-- ALWAYS mask sensitive data: `card: '****1234'`
-- ALWAYS include request ID in structured logs:
-  ```typescript
-  logger.info('Payment processed', {
-    requestId: req.id,
-    amount: payment.amount,
-    card: maskCard(payment.card)
-  });
-  ```
+## Logging
+- NEVER log PII (credit cards, SSNs, emails)
+- ALWAYS mask sensitive data
+- ALWAYS include request ID in structured logs
 
-### Performance
+## Performance
 - ALWAYS set explicit timeouts for external API calls (≤ 5 seconds)
 - ALWAYS use pipelining for multiple Redis operations
 - NEVER make sequential external calls in loops — batch them
 ```
 
-**Impact:** When AI generates a rate limiter, it sees this steering file and immediately uses sliding window, connection pooling, and error handling — without you having to prompt for it.
+**See the complete file** with code examples at `toolkit/steering/code-standards.md`
 
-### Example 2: Security Rules Steering File
+---
 
-```markdown
-# .kiro/steering/security-rules.md
+#### Example 2: `.kiro/steering/security-rules.md`
 
-## Security Constraints for All AI-Generated Code
+Copy this file as-is into your `.kiro/steering/` directory:
 
-### IAM Policies
-- NEVER use wildcard actions: `"Action": "*"` is FORBIDDEN
-- NEVER use wildcard resources: `"Resource": "*"` is FORBIDDEN
-- ALWAYS use least-privilege: specify exact actions and resources
-- Bad:
-  ```json
-  {
-    "Effect": "Allow",
-    "Action": "*",
-    "Resource": "*"
-  }
-  ```
-- Good:
-  ```json
-  {
-    "Effect": "Allow",
-    "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
-    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/PaymentTable"
-  }
-  ```
-
-### Data Encryption
-- ALWAYS encrypt data at rest (AES-256)
-- ALWAYS use TLS 1.2+ for data in transit
-- ALWAYS encrypt sensitive fields before storing in DynamoDB:
-  ```typescript
-  const encrypted = encrypt(sensitiveData, KMS_KEY_ID);
-  await dynamodb.putItem({ 
-    encryptedData: encrypted,
-    keyId: KMS_KEY_ID
-  });
-  ```
-
-### Authentication & Authorization
-- ALWAYS validate JWT tokens on every request
-- ALWAYS check user permissions before allowing operations
-- NEVER trust client-provided user IDs — extract from verified token
-- Pattern:
-  ```typescript
-  const token = extractToken(req.headers.authorization);
-  const user = await verifyToken(token);
-  if (!user.hasPermission('payments:process')) {
-    throw new ForbiddenError();
-  }
-  ```
-
-### Input Validation
-- ALWAYS validate and sanitize user inputs
-- ALWAYS use parameterized queries (never string concatenation)
-- ALWAYS enforce rate limiting on public endpoints
-- Bad:
-  ```typescript
-  const query = `SELECT * FROM users WHERE id = '${userId}'`; // SQL injection risk
-  ```
-- Good:
-  ```typescript
-  const query = 'SELECT * FROM users WHERE id = ?';
-  db.query(query, [userId]); // Parameterized
-  ```
-
-### Secrets Management
-- NEVER hardcode secrets, API keys, or credentials
-- ALWAYS use AWS Secrets Manager or Parameter Store
-- ALWAYS rotate secrets automatically
-- Pattern:
-  ```typescript
-  const secret = await secretsManager.getSecretValue({ 
-    SecretId: 'prod/payment-api-key' 
-  });
-  const apiKey = JSON.parse(secret.SecretString).apiKey;
-  ```
 ```
-
-**Impact:** AI will never generate IAM policies with wildcards, never hardcode secrets, always validate inputs — because these rules are in its context for every code generation.
-
-### Example 3: Test Quality Requirements Steering File
-
-```markdown
-# .kiro/steering/test-requirements.md
-
-## Test Quality Standards for All AI-Generated Tests
-
-### Test Coverage Requirements
-- Minimum line coverage: 80% (85% for customer-facing, 90% for financial services)
-- Minimum branch coverage: 75%
-- ALWAYS test error paths, not just happy paths
-- Pattern:
-  ```typescript
-  describe('Payment Processing', () => {
-    it('should process valid payment', async () => { /* happy path */ });
-    it('should reject invalid card', async () => { /* error path */ });
-    it('should handle network timeout', async () => { /* error path */ });
-    it('should handle Stripe API failure', async () => { /* error path */ });
-  });
-  ```
-
-### Negative Test Cases (Critical)
-- ALWAYS include tests for what must NOT happen:
-  - "Must NOT log credit card numbers"
-  - "Must NOT allow negative amounts"
-  - "Must NOT succeed if auth token is invalid"
-- Pattern:
-  ```typescript
-  it('must NOT log credit card numbers', async () => {
-    await processPayment({ card: '4111111111111111' });
-    const logs = captureLogs();
-    expect(logs).not.toContain('4111111111111111');
-    expect(logs).toContain('****1111'); // Should be masked
-  });
-  ```
-
-### Edge Cases
-- ALWAYS test boundary conditions:
-  - Empty inputs, null values, undefined
-  - Maximum/minimum values
-  - Concurrent operations
-  - Network failures, timeouts
-- Example:
-  ```typescript
-  it('should handle concurrent rate limit checks', async () => {
-    const promises = Array(100).fill(null).map(() => 
-      rateLimiter.check('tenant-123')
-    );
-    const results = await Promise.all(promises);
-    const allowed = results.filter(r => r.allowed).length;
-    expect(allowed).toBeLessThanOrEqual(100); // Rate limit enforced
-  });
-  ```
-
-### Test Data
-- NEVER use production data in tests
-- ALWAYS use synthetic test data
-- ALWAYS clean up test data after tests run
-- Pattern:
-  ```typescript
-  beforeEach(async () => {
-    testUser = await createTestUser({ id: 'test-123' });
-  });
-  
-  afterEach(async () => {
-    await deleteTestUser(testUser.id);
-  });
-  ```
-
-### Performance Tests
-- ALWAYS include latency assertions for critical paths
-- Pattern:
-  ```typescript
-  it('should complete under 50ms at p99', async () => {
-    const latencies = [];
-    for (let i = 0; i < 100; i++) {
-      const start = Date.now();
-      await rateLimiter.check('tenant-123');
-      latencies.push(Date.now() - start);
-    }
-    latencies.sort((a, b) => a - b);
-    const p99 = latencies[98];
-    expect(p99).toBeLessThan(50);
-  });
-  ```
-```
-
-**Impact:** AI generates comprehensive tests with error paths, edge cases, and negative tests automatically — no need to prompt for "please add tests for error handling."
-
-### How Steering Files Work
-
-**File matching patterns** (from your .kiro/steering/ directory):
-
-```markdown
 ---
 inclusion: always
 ---
-# This steering file is included in EVERY AI code generation
+
+# Security Constraints for All AI-Generated Code
+
+## IAM Policies
+- NEVER use wildcard actions: "Action": "*" is FORBIDDEN
+- NEVER use wildcard resources: "Resource": "*" is FORBIDDEN
+- ALWAYS use least-privilege: specify exact actions and resources
+
+## Data Encryption
+- ALWAYS encrypt data at rest (AES-256)
+- ALWAYS use TLS 1.2+ for data in transit
+- ALWAYS encrypt sensitive fields before storing in DynamoDB
+
+## Authentication & Authorization
+- ALWAYS validate JWT tokens on every request
+- ALWAYS check user permissions before allowing operations
+- NEVER trust client-provided user IDs
+
+## Input Validation
+- ALWAYS validate and sanitize user inputs
+- ALWAYS use parameterized queries (never string concatenation)
+- ALWAYS enforce rate limiting on public endpoints
+
+## Secrets Management
+- NEVER hardcode secrets, API keys, or credentials
+- ALWAYS use AWS Secrets Manager or Parameter Store
+- ALWAYS rotate secrets automatically
 ```
 
-```markdown
+**See the complete file** with code examples at `toolkit/steering/security-rules.md`
+
+---
+
+#### Example 3: `.kiro/steering/test-requirements.md`
+
+Copy this file as-is into your `.kiro/steering/` directory:
+
+```
+---
+inclusion: always
+---
+
+# Test Quality Standards for All AI-Generated Tests
+
+## Test Coverage Requirements
+- Minimum line coverage: 80% (85% for customer-facing, 90% for financial services)
+- Minimum branch coverage: 75%
+- ALWAYS test error paths, not just happy paths
+
+## Negative Test Cases (Critical)
+- ALWAYS include tests for what must NOT happen
+- Examples: "Must NOT log credit card numbers", "Must NOT allow negative amounts"
+
+## Edge Cases
+- ALWAYS test boundary conditions
+- Empty inputs, null, undefined, max/min values
+- Concurrent operations, network failures, timeouts
+
+## Performance Tests
+- ALWAYS include latency assertions for critical paths
+- Example: p99 latency < 50ms for rate limiter
+
+## Test Data
+- NEVER use production data in tests
+- ALWAYS use synthetic test data
+- ALWAYS clean up test data after tests run
+```
+
+**See the complete file** with code examples at `toolkit/steering/test-requirements.md`
+
+---
+
+### How Steering Files Work
+
+Steering files use front-matter to control when they're included in AI context:
+
+**Always included (most common):**
+```
+---
+inclusion: always
+---
+```
+This file is included in EVERY code generation session.
+
+**Conditionally included based on file path:**
+```
 ---
 inclusion: fileMatch
 fileMatchPattern: "infra/**/*.ts"
 ---
-# This steering file is only included when working on infrastructure code
 ```
+This file is only included when working on infrastructure code.
 
-```markdown
+**Manually included when user references it:**
+```
 ---
 inclusion: manual
 ---
-# This steering file is only included when user explicitly references it with #SteeringFileName
 ```
+This file is only included when user types `#SteeringFileName` in chat.
+
+---
 
 ### Complete Steering Setup
 
-```bash
+```
 .kiro/steering/
 ├── code-standards.md        # Always included — coding patterns
 ├── security-rules.md         # Always included — security constraints
@@ -640,6 +563,8 @@ inclusion: manual
 ├── api-standards.md          # fileMatch: "src/routes/**/*" — API design
 └── experimental.md           # manual — bleeding-edge patterns (opt-in)
 ```
+
+---
 
 ### Steering Files + Hooks = Defense in Depth
 
@@ -657,35 +582,38 @@ AI reads steering files (code-standards.md, security-rules.md, test-requirements
          ↓
 AI generates code following steering rules (sliding window, no wildcards, comprehensive tests)
          ↓
-Hook validates generated code (scan-secrets.yaml, validate-iam.yaml, test-on-save.yaml)
+Hook validates generated code (scan-secrets.json, validate-iam.json, test-on-save.json)
          ↓
 If validation passes → code is committed
 If validation fails → developer notified, fix or regenerate
 ```
 
-### Impact: Steering Files Reduce Hook Failures by 80%
+---
+
+### Impact: Steering Files Reduce Hook Failures
 
 **Before steering files:**
 - AI generates code with common mistakes
-- Hooks catch violations 40% of the time
+- Hooks catch violations frequently
 - Developer fixes manually or prompts AI to fix
-- 3-5 iteration cycles common
+- Multiple iteration cycles common
 
 **After steering files:**
 - AI generates code following team standards
-- Hooks catch violations <8% of the time (only novel edge cases)
+- Hooks catch violations infrequently (only novel edge cases)
 - Most code passes validation on first generation
-- 1 iteration cycle typical
+- Single iteration cycle typical
 
 **Measurable outcomes:**
-- PR review time: 45 min → 15 min (steering enforces consistency)
-- Code rework: 30% → <5% (steering prevents common mistakes)
-- Hook violation rate: 40% → <8% (steering teaches AI your standards)
+- PR review time: reduced significantly (steering enforces consistency)
+- Code rework: reduced significantly (steering prevents common mistakes)
+- Hook violation rate: reduced significantly (steering teaches AI your standards)
 
 ---
 
 ## 3. Deployment velocity gap
 
+> **TL;DR:** Auto-deploy to staging on spec approval, auto-update docs when APIs change, auto-scaffold new services. Result: Faster deployment, reduced manual documentation work, accelerated service creation.
 
 **The data:**
 - 58% of leaders cite faster deployment as their top 2026 priority (DuploCloud)
@@ -741,7 +669,7 @@ If validation fails → developer notified, fix or regenerate
   "version": "v1",
   "hooks": [{
     "name": "scaffold-new-service",
-    "description": "Generate service boilerplate structure from spec - eliminates 80% of manual setup work",
+    "description": "Generate service boilerplate structure from spec - eliminates most manual setup work",
     "trigger": "PostFileSave",
     "matcher": "specs/services/new-.*\\.spec\\.md$",
     "action": {
@@ -751,14 +679,12 @@ If validation fails → developer notified, fix or regenerate
   }]
 }
 ```
-  approval: pr_review
-```
 
 **Impact on velocity and burnout:**
 - **Auto-deployment**: Spec approval triggers staging deployment → removes bottlenecks, eliminates waiting
-- **Doc automation**: API changes auto-update docs → eliminates stale documentation, saves 90% of manual time
-- **Service scaffolding**: New service specs generate boilerplate → 80% faster initial setup
-- **Overall**: Reduces deployment wait times by 60%, eliminates manual documentation toil, accelerates new service creation from days to hours
+- **Doc automation**: API changes auto-update docs → eliminates stale documentation, reduces manual documentation work
+- **Service scaffolding**: New service specs generate boilerplate → faster initial setup
+- **Overall**: Reduces deployment wait times, eliminates manual documentation toil, accelerates new service creation from days to hours
 
 ### Consolidating fragmented toolchains
 
@@ -817,6 +743,8 @@ After (Kiro hook — runs on file save, instant feedback):
 ---
 
 ## 4. AI tools leaking sensitive data
+
+> **TL;DR:** Three-layer protection: file exclusions (config), local pre-send hooks (scanning), AWS Bedrock Guardrails (API enforcement). Result: Sensitive data never reaches AI models.
 
 **The data:**
 - 68% of organizations have experienced data leakage from employees sharing sensitive info with AI tools (Metomic 2025)
@@ -1147,6 +1075,8 @@ aws cloudwatch put-metric-alarm \
 
 ## 5. FSI regulatory complexity
 
+> **TL;DR:** Spec approval maps to CAB, deployment window enforcement prevents market-hours changes, audit trails built into git workflow. Result: Compliance without slowing down development.
+
 **The data:**
 - Must satisfy OCC + FDIC + Fed + SEC + FINRA simultaneously — each with different requirements
 - 82% of banking executives rank cloud migration as top-3 priority — only ~25% have migrated core systems
@@ -1198,6 +1128,8 @@ Process end-of-day settlement calculations for fixed income positions.
 
 ## 6. Knowledge loss when engineers leave
 
+> **TL;DR:** Specs capture the "why" not just "what", post-incident hooks encode lessons directly into specs. Result: Institutional knowledge preserved in code, not tribal.
+
 **The data:**
 - 47% burnout means experienced engineers are actively leaving (DuploCloud)
 - Tribal knowledge reliance puts scaling at risk
@@ -1220,7 +1152,7 @@ Q3 2027 (contract obligation with clearing house).
 - Field mapping uses a lookup table (not hardcoded) because the clearing
   house changes their format ~2x per year with 30 days notice
 - We retry failed batches 3x with exponential backoff because the mainframe
-  drops connections under load but succeeds on retry 95% of the time
+  drops connections under load but succeeds on retry frequently
 
 ## Constraints
 - Batch size MUST NOT exceed 500 records (mainframe memory limit)
@@ -1340,14 +1272,19 @@ Traditional change management reviews 500 lines of code diffs. With AI, you migh
    # Spec approved by: @tech-lead-b, @risk-officer-c
    # Generation timestamp: 2026-06-15 11:45
    
-5. Hook runs tests, security scans (see Section 1, 2)
+5. Hook runs comprehensive validation (see Sections 1, 2 for details):
+   a. Tests executed: All spec test expectations validated
+   b. Coverage measured: Line + branch coverage against thresholds
+   c. Mutation testing: Verifies tests actually catch failures
+   d. Security scans: Secrets, IAM policies, compliance checks
    Results logged to .kiro/audit/payment-v2-generation.json
    
 6. If all validations pass → Hook opens deployment PR
    Deployment PR includes:
    - Link to original spec PR
    - Approval chain
-   - Test results
+   - Test results with coverage metrics (e.g., "85% line, 80% branch")
+   - Mutation testing score (e.g., "12/12 mutations caught")
    - Security scan results
 ```
 
@@ -1355,12 +1292,43 @@ Traditional change management reviews 500 lines of code diffs. With AI, you migh
 
 | Who | Owns What | Evidence | When Production Fails |
 |-----|-----------|----------|----------------------|
-| **Spec author** (@engineer-a) | Intent and constraints | Git commit + PR description | "Did the spec accurately define requirements?" |
-| **Spec approvers** (@tech-lead-b, @risk-officer-c) | Behavior and business logic | PR approval in Git | "Did they approve behavior that caused the failure?" |
+| **Spec author** (@engineer-a) | Intent, constraints, and test expectations | Git commit + PR description | "Did the spec accurately define requirements AND testable expectations?" |
+| **Spec approvers** (@tech-lead-b, @risk-officer-c) | Behavior, business logic, and test quality standards | PR approval in Git | "Did they approve behavior that caused the failure? Were test expectations comprehensive?" |
 | **Agent** (sonnet) | Implementation matching spec | Generation log in .kiro/audit/ | "Did generated code match the spec?" (testable via spec constraints) |
-| **Hooks** | Standards enforcement | Hook execution logs | "Did hooks catch violations?" (check logs) |
+| **Hooks** (test/coverage/mutation) | Code quality enforcement | Hook execution logs + coverage reports | "Did hooks catch violations? Coverage: 85% line, 80% branch. Mutations: 12/12 caught." |
 
-**The key insight:** If production fails, you trace back to the spec PR approval. The question becomes: "Did the approved spec contain the failure condition?" If yes → spec approvers are accountable. If no → agent implementation bug.
+**The key insight:** If production fails, you trace back to the spec PR approval. The question becomes: "Did the approved spec contain the failure condition?" If yes → spec approvers are accountable. If no → check if hooks validated code quality (coverage, mutation testing). If hooks passed but code still failed → agent implementation bug or insufficient test expectations.
+
+### Test quality validation as part of change authorization
+
+**Why test quality matters for governance:** Spec approval authorizes the *behavior*, but hooks verify the *implementation quality*. Both are required for safe AI-generated code.
+
+**The validation pipeline (see Section 2 for details):**
+
+1. **Spec test expectations** (human-authored)
+   - Define WHAT to test: positive cases, negative cases, edge cases
+   - Example: "✓ 101st request returns 429" (positive), "✗ Must NOT throw if Redis down" (negative)
+   
+2. **Coverage enforcement** (automated via hooks)
+   - Validates test breadth: Did tests exercise all code paths?
+   - Thresholds by risk level: Payment services require 90% line, 85% branch coverage
+   - Blocks deployment if coverage falls below threshold
+   
+3. **Mutation testing** (automated via hooks)
+   - Validates test depth: Do tests actually catch failures?
+   - Example: If you mutate `count < 100` to `count <= 100`, do tests fail?
+   - Prevents "both code and tests wrong in the same way" failure mode
+   
+4. **Integration with change authorization**
+   - Spec PR approved → hooks run validation → results added to audit log
+   - If validation fails → no deployment PR is opened
+   - Deployment PR shows: "Coverage: 85%/80%, Mutations: 12/12 caught, Security: clean"
+   
+**Why this prevents AI-induced incidents:**
+- Traditional code review can't catch subtle bugs in 5,000 lines of generated code
+- Spec review ensures *intent* is correct (what should happen)
+- Coverage + mutation testing ensures *implementation* is correct (what actually happens)
+- Together = defense in depth for AI governance
 
 ### Hook: Require spec approval before code generation
 
@@ -1500,7 +1468,7 @@ Sonnet cost (50 executions/day for critical reviews):
 - Subtotal: $52.50/month
 
 Total optimized: $700.50/month = $8,406/year
-Savings: $369,594/year (97.8% reduction)
+Savings: $369,594/year (significant reduction)
 ```
 
 ### Model routing controls cost at the hook level
@@ -1649,7 +1617,7 @@ aws budgets create-budget \
 **Total optimized monthly cost:** ~$675 for 50 developers
 
 **Impact:**
-- 97% cost reduction vs naive "Sonnet everywhere" approach
+- Significant cost reduction vs naive "Sonnet everywhere" approach
 - Local execution = instant feedback, zero cost
 - Nova = 80x cheaper than Sonnet for routine tasks
 - Sonnet reserved for tasks that justify the cost
