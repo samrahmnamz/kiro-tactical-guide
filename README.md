@@ -19,7 +19,7 @@ Cloud Engineering and DevOps teams face 6 primary systematic challenges (plus ad
 | **5. FSI regulatory complexity** | OCC/FDIC/Fed/SEC simultaneous compliance requirements | Deployment windows, approval workflows, audit trails |
 | **6. Knowledge loss when engineers leave** | 47% burnout → experienced engineers leaving (DuploCloud 2026) | Specs capture "why", post-incident learning hooks |
 
-**Secondary concerns** (emerge during scaling): Engineer burnout from repetitive work (47% report burnout; 36% of time on manual tasks), cognitive overload (teams run 7 CI/CD systems, 5 monitoring solutions), fragmented toolchains (IaC "part of the problem" not solution), cost visibility (Bedrock spend tracking).
+**Secondary concerns** (emerge during scaling): Resiliency and cascading failures (70% of outages from single dependency failure), engineer burnout from repetitive work (47% report burnout; 36% of time on manual tasks), cognitive overload (teams run 7 CI/CD systems, 5 monitoring solutions), fragmented toolchains (IaC "part of the problem" not solution), cost visibility (Bedrock spend tracking).
 
 **Powers** (NEW): Production intelligence capabilities that extend Kiro beyond build-time into runtime operations - see section below.
 
@@ -34,12 +34,14 @@ kiro-cloudeng-devops/
 ├── hooks/               # Ready-to-use automation
 │   ├── security/       # Secret scanning, IAM validation (Concerns 1, 4)
 │   ├── stability/      # Test-on-save, spec validation (Concern 2)
+│   ├── resiliency/     # Circuit breakers, retry patterns, timeouts
 │   ├── automation/     # Doc updates, scaffolding (burnout reduction)
 │   └── regulatory/     # Deployment windows, approvals (Concern 5)
 │
 ├── examples/           # Complete working projects
 │   ├── payment-processor/    # Security: PCI DSS, secret scanning
 │   ├── rate-limiter/         # Stability: test-on-save patterns
+│   ├── resilient-service/    # Resiliency: circuit breakers, graceful degradation
 │   ├── notification-service/ # Automation: spec → impl + tests + IaC
 │   └── settlement-engine/    # Regulatory: FSI compliance
 │
@@ -73,9 +75,10 @@ kiro-cloudeng-devops/
 **🔐 Security/Secrets in code (Concern 1)** → Copy `hooks/security/scan-secrets.yaml` or `scan-secrets-regex.yaml`  
 **✅ AI-generated code stability (Concern 2)** → Copy `hooks/stability/test-on-save.yaml`  
 **🚀 Waiting for others to deploy (Concern 3)** → Copy `hooks/deployment/cascade-api-change.yaml`  
-**� Data leakage from AI tools (Concern 4)** → Copy `toolkit/steering/excluded-paths.yaml`  
+**🔒 Data leakage from AI tools (Concern 4)** → Copy `toolkit/steering/excluded-paths.yaml`  
 **📋 FSI regulatory compliance (Concern 5)** → Copy `hooks/regulatory/deployment-window.yaml`  
-**� Knowledge loss (Concern 6)** → Copy `specs/templates/service.spec.md` and start documenting "why"  
+**📖 Knowledge loss (Concern 6)** → Copy `specs/templates/service.spec.md` and start documenting "why"  
+**🛡️ Cascading failures / Resiliency** → Copy `hooks/resiliency/validate-circuit-breaker.yaml` + `validate-retry-patterns.yaml` + `validate-timeouts.yaml`  
 **🤖 Repetitive documentation work** → Copy `hooks/automation/update-docs.yaml`  
 **🧪 Test quality for AI code** → Install `toolkit/powers/spec-test-quality/` Power
 

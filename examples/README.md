@@ -32,6 +32,12 @@ Each example project addresses one or more of the 10 primary concerns:
 - **Stack**: TypeScript, SQS, SNS, AWS CDK
 - **Artifacts**: update-docs.yaml, scaffold-service.yaml, regen-clients.yaml
 
+### Resilient Service (Resiliency)
+- **Concern**: Secondary Concern - Cascading Failures & Resiliency
+- **Demonstrates**: Circuit breakers, retry with exponential backoff + jitter, timeout budgets, graceful degradation, bulkhead isolation
+- **Stack**: TypeScript, Express, opossum (circuit breaker), ioredis
+- **Artifacts**: validate-circuit-breaker.yaml, validate-retry-patterns.yaml, validate-timeouts.yaml, resiliency-standard.spec.md
+
 ### Settlement Engine (Regulatory)
 - **Concern**: Primary Concern #9 - FSI Regulatory Complexity
 - **Demonstrates**: Deployment windows, approval requirements, audit trails

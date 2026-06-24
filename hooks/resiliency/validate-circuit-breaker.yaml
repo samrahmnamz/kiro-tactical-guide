@@ -1,0 +1,419 @@
+# Resiliency Hook: Validate Circuit Breaker Patterns
+#
+# PURPOSE: Verify that services implement proper circuit breaker patterns for
+#          external dependencies. Catches missing or misconfigured circuit breakers
+#          before they cause cascading failures in production.
+#
+# REQUIREMENTS ADDRESSED:
+# - Prevent cascading failures from dependency outages
+# - Enforce graceful degradation with fallback behavior
+# - Validate state transitions (closed → open → half-open)
+# - Ensure circuit breakers cover all external service calls
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Update SOURCE_PATHS to match your source code directories
+# 2. Set EXTERNAL_CALL_PATTERNS to match how your code calls external services:
+#    - HTTP clients: axios, fetch, got, node-fetch, superagent
+#    - AWS SDK: DynamoDB, S3, SQS, SNS, SES, Lambda
+#    - Database: pg, mysql, mongodb, redis
+#    - gRPC: @grpc/grpc-js
+#
+# OPTIONAL CHANGES:
+# 3. Circuit breaker library detection:
+#    - Default detects: opossum, cockatiel, resilience4j patterns
+#    - Add your custom circuit breaker class/function names
+#
+# 4. Threshold configuration:
+#    - FAILURE_THRESHOLD: Number of failures before opening (default: 5)
+#    - RESET_TIMEOUT: Time before half-open attempt (default: 30s)
+#    - HALF_OPEN_MAX: Requests to allow in half-open state (default: 3)
+#
+# 5. Failure handling:
+#    - on_failure: warn (default) - Report missing circuit breakers
+#    - on_failure: block_context - Block file if critical path unprotected
+#
+# VALIDATION:
+# - Introduce a dependency call without circuit breaker wrapping
+# - Save file and verify hook flags it
+# - Add circuit breaker wrapper, verify hook passes
+#
+# EXAMPLES:
+#
+# Example 1: HTTP Client Without Circuit Breaker
+# Code: await axios.get('https://payment-gateway.com/charge')
+# Violation: External HTTP call not wrapped in circuit breaker
+# Fix: Wrap with opossum or cockatiel circuit breaker
+#
+# Example 2: AWS SDK Call Without Circuit Breaker
+# Code: await dynamodb.send(new GetItemCommand(params))
+# Note: AWS SDK has built-in retries but NOT circuit breakers
+# Fix: Wrap DynamoDB calls in circuit breaker for graceful degradation
+#
+# Example 3: Circuit Breaker Without Fallback
+# Code: breaker.fire(() => axios.get(url))  // No fallback defined
+# Violation: Circuit breaker opens but no fallback behavior
+# Fix: Add fallback function that returns cached/default data
+#
+# ============================================================================
+
+name: validate-circuit-breaker
+description: |
+  Validates that external dependency calls are protected by circuit breaker patterns.
+  
+  Checks:
+  - All external HTTP calls wrapped in circuit breaker
+  - All third-party service calls have fallback behavior
+  - Circuit breaker configuration follows best practices
+  - State transitions are properly handled (closed → open → half-open)
+  - Fallback responses are meaningful (not just swallowed errors)
+  - Metrics/logging on state changes for observability
+  
+  Benefits:
+  - Prevent cascading failures from single dependency outage
+  - Reduce MTTR by isolating failures to affected component
+  - Maintain partial service availability during outages
+  - Provide observable failure patterns for debugging
+  
+  Why AI-generated code needs this:
+  - AI generates "happy path" code that calls dependencies directly
+  - AI rarely adds circuit breaker wrapping unless explicitly prompted
+  - AI-generated fallback logic is often incomplete (empty catch blocks)
+  - Without this hook, services are vulnerable to cascading failures
+
+on:
+  fileEdited:
+    # CUSTOMIZE: Adjust to match your source code structure
+    paths:
+      # Service implementation files
+      - "src/**/*.ts"
+      - "src/**/*.tsx"
+      - "src/**/*.js"
+      - "src/**/*.jsx"
+      - "lib/**/*.ts"
+      - "lib/**/*.js"
+      - "app/**/*.py"
+      - "src/**/*.py"
+      - "pkg/**/*.go"
+      - "internal/**/*.go"
+      - "src/**/*.rs"
+      - "src/**/*.java"
+      
+      # Client/integration files (most likely to call external services)
+      - "src/clients/**/*"
+      - "src/integrations/**/*"
+      - "src/services/**/*"
+      - "src/adapters/**/*"
+      - "src/gateways/**/*"
+
+run:
+  agent: sonnet
+  
+  task: |
+    You are a resiliency pattern validator. Your job is to verify that all external
+    dependency calls are properly protected by circuit breaker patterns with appropriate
+    fallback behavior.
+    
+    ============================================================================
+    VALIDATION METHODOLOGY
+    ============================================================================
+    
+    1. IDENTIFY EXTERNAL CALLS
+       Scan for patterns indicating external dependency calls:
+       
+       HTTP Clients:
+       - axios.get/post/put/delete/patch
+       - fetch(), node-fetch
+       - got(), got.get/post
+       - superagent
+       - http.request, https.request
+       - Any URL pattern (https://, http://)
+       
+       AWS SDK:
+       - .send() on any AWS client (DynamoDBClient, S3Client, SQSClient, etc.)
+       - AWS SDK v2: dynamodb.getItem(), s3.getObject(), etc.
+       - AWS SDK v3: client.send(new *Command())
+       
+       Database Clients:
+       - Redis: redis.get/set/del, ioredis calls
+       - PostgreSQL: pool.query(), client.query()
+       - MongoDB: collection.find/insert/update/delete
+       - MySQL: connection.query()
+       
+       Message Queues:
+       - SQS: sendMessage, receiveMessage
+       - Kafka: producer.send(), consumer.subscribe()
+       - RabbitMQ: channel.publish(), channel.consume()
+       
+       gRPC:
+       - client.methodName() on gRPC client stubs
+       
+       Other Services:
+       - Any inter-service HTTP/gRPC call
+       - Third-party API calls (Stripe, Twilio, SendGrid, etc.)
+    
+    2. CHECK CIRCUIT BREAKER WRAPPING
+       For each external call, verify it's wrapped in a circuit breaker:
+       
+       Node.js patterns (opossum):
+       ```typescript
+       const breaker = new CircuitBreaker(asyncFunction, options);
+       breaker.fire(args);
+       breaker.fallback(fallbackFunction);
+       ```
+       
+       Node.js patterns (cockatiel):
+       ```typescript
+       const policy = Policy.wrap(
+         Policy.handleAll().circuitBreaker(10_000, new ConsecutiveBreaker(5)),
+         Policy.handleAll().retry().attempts(3)
+       );
+       await policy.execute(() => externalCall());
+       ```
+       
+       Custom patterns:
+       ```typescript
+       await withCircuitBreaker('service-name', () => externalCall());
+       await circuitBreaker.execute(() => externalCall());
+       ```
+       
+       Go patterns:
+       ```go
+       cb := gobreaker.NewCircuitBreaker(settings)
+       result, err := cb.Execute(func() (interface{}, error) { ... })
+       ```
+       
+       Python patterns:
+       ```python
+       @circuit_breaker(failure_threshold=5, recovery_timeout=30)
+       def call_external_service():
+       ```
+    
+    3. VALIDATE CIRCUIT BREAKER CONFIGURATION
+       Check that configuration follows best practices:
+       
+       Required settings:
+       - failureThreshold/errorThresholdPercentage: 3-10 failures (not too high, not too low)
+       - resetTimeout/timeout: 10-60 seconds (time before half-open)
+       - halfOpenRequests: 1-5 (requests to test in half-open state)
+       
+       Warning if:
+       - failureThreshold > 20 (too high, won't open fast enough)
+       - resetTimeout < 5 seconds (too aggressive, causes thrashing)
+       - resetTimeout > 300 seconds (too conservative, stays open too long)
+       - No timeout configured (uses library defaults which may be wrong)
+    
+    4. VALIDATE FALLBACK BEHAVIOR
+       For each circuit breaker, verify fallback exists and is meaningful:
+       
+       Good fallbacks:
+       - Return cached data (stale but available)
+       - Return default/degraded response
+       - Return error response with appropriate status code
+       - Queue request for later retry
+       - Redirect to alternative service/endpoint
+       
+       Bad fallbacks (flag as violations):
+       - Empty catch block (swallowed error)
+       - Re-throw without any handling
+       - return undefined/null without explanation
+       - No fallback defined at all
+       - console.log only (no actual fallback response)
+    
+    5. CHECK STATE CHANGE OBSERVABILITY
+       Verify circuit breaker state changes are observable:
+       
+       Required:
+       - Log on state change (closed → open, open → half-open, half-open → closed)
+       - Include dependency name and reason for state change
+       
+       Recommended:
+       - Emit metrics on state change (CloudWatch, Prometheus)
+       - Alert on circuit open (for critical dependencies)
+       - Track time spent in each state
+    
+    ============================================================================
+    EXCEPTION CASES (DO NOT FLAG)
+    ============================================================================
+    
+    Do NOT flag the following as violations:
+    - Internal function calls (same service, no network boundary)
+    - Database connection initialization (one-time setup, not per-request)
+    - Cache read operations (Redis GET used as cache, not critical path)
+    - Health check endpoints calling dependencies (expected to fail if dep is down)
+    - Test files and mocks
+    - Configuration loading at startup
+    - Calls already inside a circuit breaker wrapper
+    
+    ============================================================================
+    OUTPUT FORMAT
+    ============================================================================
+    
+    For each finding, report:
+    
+    ```
+    [SEVERITY] Circuit Breaker Violation
+    File: <file path>
+    Line: <line number>
+    
+    External Call: <the dependency call found>
+    Dependency: <identified service name>
+    
+    Issue: <specific problem>
+    Impact: <what could happen in production>
+    
+    Recommendation: <how to fix>
+    
+    Example fix:
+    <code showing corrected implementation>
+    ```
+    
+    ============================================================================
+    SEVERITY CLASSIFICATION
+    ============================================================================
+    
+    CRITICAL:
+    - External HTTP call without any circuit breaker (cascading failure risk)
+    - Circuit breaker without fallback on critical path (service unavailable)
+    - Third-party payment/auth calls unprotected (revenue/security impact)
+    
+    HIGH:
+    - AWS SDK calls without circuit breaker (degraded experience)
+    - Circuit breaker with swallowed errors (silent failures)
+    - Missing observability on state changes (invisible failures)
+    
+    MEDIUM:
+    - Circuit breaker with suboptimal configuration (too high/low thresholds)
+    - Fallback returns generic error instead of degraded response
+    - Missing retry logic inside circuit breaker
+    
+    LOW:
+    - Non-critical cache calls without circuit breaker
+    - Circuit breaker present but missing metrics emission
+    - Configuration uses library defaults (may be acceptable)
+    
+    ============================================================================
+    EXAMPLE OUTPUTS
+    ============================================================================
+    
+    CRITICAL Example:
+    ```
+    [CRITICAL] Unprotected External HTTP Call
+    File: src/clients/payment-gateway.ts
+    Line: 34
+    
+    External Call: await axios.post('https://api.stripe.com/v1/charges', data)
+    Dependency: Stripe Payment Gateway
+    
+    Issue: Direct HTTP call to Stripe without circuit breaker wrapping
+    Impact: If Stripe is slow/down, all payment requests will timeout (30s default),
+            exhausting connection pool and causing cascading failures to all endpoints
+    
+    Recommendation: Wrap in circuit breaker with fallback to queue payment for retry
+    
+    Example fix:
+    import CircuitBreaker from 'opossum';
+    
+    const stripeBreaker = new CircuitBreaker(
+      async (data) => axios.post('https://api.stripe.com/v1/charges', data),
+      {
+        timeout: 5000,           // 5s timeout per request
+        errorThresholdPercentage: 50,  // Open after 50% failure rate
+        resetTimeout: 30000,     // Try again after 30s
+        volumeThreshold: 5,      // Minimum 5 requests before calculating error %
+      }
+    );
+    
+    stripeBreaker.fallback(async (data) => {
+      logger.warn('Stripe circuit open, queuing payment for retry', { amount: data.amount });
+      await paymentRetryQueue.enqueue(data);
+      return { status: 'pending', message: 'Payment queued for processing' };
+    });
+    
+    stripeBreaker.on('open', () => {
+      logger.error('Circuit OPEN: Stripe payment gateway', { state: 'open' });
+      metrics.increment('circuit_breaker.stripe.open');
+    });
+    
+    // Usage:
+    const result = await stripeBreaker.fire(chargeData);
+    ```
+    
+    NO VIOLATIONS Example:
+    ```
+    ✅ Circuit Breaker Validation Passed
+    
+    External dependencies identified: 3
+    ✓ Stripe API: Protected by stripeBreaker (threshold: 5, timeout: 30s, fallback: queue)
+    ✓ DynamoDB: Protected by dynamoBreaker (threshold: 3, timeout: 10s, fallback: cache)
+    ✓ Redis Cache: Protected by redisBreaker (threshold: 5, timeout: 5s, fallback: local-cache)
+    
+    All external calls are properly protected with circuit breakers and fallback behavior.
+    ```
+    
+    ============================================================================
+    CONTEXT
+    ============================================================================
+    
+    Changed files: ${KIRO_CHANGED_FILES}
+    
+    Analyze these files for:
+    1. External dependency calls (HTTP, AWS SDK, databases, message queues)
+    2. Circuit breaker wrapping (opossum, cockatiel, custom wrappers)
+    3. Fallback behavior (meaningful degraded responses)
+    4. Configuration correctness (thresholds, timeouts)
+    5. Observability (logging/metrics on state changes)
+    
+    Focus on CRITICAL and HIGH severity findings.
+    Be specific about file locations, line numbers, and dependency names.
+
+  approval: none
+
+on_failure: warn
+# warn: Report missing circuit breakers but allow continuation
+# Change to "block_context" for critical services where cascading failures are unacceptable
+
+# ============================================================================
+# CIRCUIT BREAKER BEST PRACTICES REFERENCE
+# ============================================================================
+#
+# State Machine:
+#   CLOSED (normal) → failures exceed threshold → OPEN (failing fast)
+#   OPEN (failing fast) → reset timeout expires → HALF-OPEN (testing)
+#   HALF-OPEN (testing) → test succeeds → CLOSED (normal)
+#   HALF-OPEN (testing) → test fails → OPEN (failing fast)
+#
+# Configuration Guidelines:
+#   - failureThreshold: 5 for most services (lower for critical paths)
+#   - resetTimeout: 30s for most services (shorter for fast-recovering deps)
+#   - timeout: Match your SLA (if SLA is 200ms, timeout at 500ms)
+#   - halfOpenRequests: 1-3 (test with minimal traffic)
+#
+# Fallback Strategies (in order of preference):
+#   1. Return cached data (stale but functional)
+#   2. Return degraded response (partial data)
+#   3. Queue for async retry (eventual consistency)
+#   4. Return meaningful error (user knows what happened)
+#   5. Redirect to backup service (if available)
+#
+# Anti-Patterns:
+#   - Circuit breaker per-request (should be per-dependency)
+#   - Same threshold for all dependencies (should be tuned per-dep)
+#   - No fallback (circuit opens, service fails anyway)
+#   - Too high threshold (takes too long to open, cascading failures)
+#   - Too low threshold (flapping, service appears unreliable)
+#
+# ============================================================================
+# RELATED HOOKS
+# ============================================================================
+#
+# Combine with:
+# - validate-retry-patterns.yaml: Retry logic inside circuit breaker
+# - validate-timeouts.yaml: Timeout configuration for external calls
+# - validate-spec-constraints.yaml: Spec-level resiliency requirements
+# - test-on-save.yaml: Tests verify circuit breaker behavior
+#
+# ============================================================================

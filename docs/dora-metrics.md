@@ -265,6 +265,23 @@ Kiro's spec-driven approach with cascading hooks and automation targets each met
   - Triggers rollback on threshold violations
   - Restores service without manual intervention
 
+#### Resiliency Patterns (Automatic Recovery)
+- **`hooks/resiliency/validate-circuit-breaker.yaml`**
+  - Circuit breakers automatically isolate failing dependencies
+  - Half-open state tests recovery without manual intervention
+  - Reduces MTTR from 15-45 minutes to ~30 seconds for dependency failures
+  - Prevents cascading failures that require multi-team response
+
+- **`hooks/resiliency/validate-timeouts.yaml`**
+  - Explicit timeouts prevent resource exhaustion during incidents
+  - Hanging calls fail fast instead of blocking indefinitely
+  - Connection pools remain available for healthy dependencies
+
+- **`specs/golden/resiliency-standard.spec.md`**
+  - Defines graceful degradation hierarchy (what to serve when deps fail)
+  - Bulkhead isolation prevents single dependency consuming all resources
+  - Observable circuit breaker state enables faster incident diagnosis
+
 #### Fast Feedback Loops
 - **`hooks/deployment/promote-to-staging.yaml`**
   - Validates fixes in staging automatically

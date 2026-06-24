@@ -1,0 +1,252 @@
+# Resiliency Hook: Validate Timeout Configuration
+#
+# PURPOSE: Ensure all external service calls have explicit timeout configurations.
+#          Missing timeouts are the silent killer of distributed systems — a single
+#          slow dependency can exhaust connection pools and thread pools, causing
+#          complete service unavailability.
+#
+# REQUIREMENTS ADDRESSED:
+# - Every external call must have an explicit timeout
+# - Timeouts must fit within the overall request budget
+# - Connection timeouts separate from request timeouts
+# - Prevent indefinite blocking on slow dependencies
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Update SOURCE_PATHS for your project structure
+# 2. Set SERVICE_SLA_MS to your service's latency SLA (e.g., 3000 for 3s)
+#
+# OPTIONAL CHANGES:
+# 3. Timeout thresholds:
+#    - MAX_TIMEOUT_MS: Maximum allowed timeout (default: 30000ms)
+#    - MIN_TIMEOUT_MS: Minimum timeout to avoid premature failures (default: 100ms)
+#    - CONNECTION_TIMEOUT_MS: Max connection establishment time (default: 3000ms)
+#
+# ============================================================================
+
+name: validate-timeouts
+description: |
+  Validates that all external service calls have explicit timeout configuration.
+  
+  Checks:
+  - HTTP client timeout configured (connect + request)
+  - AWS SDK timeout configured
+  - Database query timeout configured
+  - gRPC deadline configured
+  - Timeouts fit within overall request latency budget
+  - No infinite/missing timeout configurations
+  
+  Why this matters:
+  - Default timeouts are often 30-120 seconds (far too long)
+  - A single slow call without timeout blocks threads/connections
+  - 10 blocked connections = connection pool exhausted = service down
+  - AI-generated code almost never sets explicit timeouts
+
+on:
+  fileEdited:
+    paths:
+      - "src/**/*.ts"
+      - "src/**/*.tsx"
+      - "src/**/*.js"
+      - "src/**/*.jsx"
+      - "lib/**/*.ts"
+      - "lib/**/*.js"
+      - "app/**/*.py"
+      - "src/**/*.py"
+      - "pkg/**/*.go"
+      - "internal/**/*.go"
+      - "src/**/*.rs"
+      - "src/**/*.java"
+      - "src/clients/**/*"
+      - "src/integrations/**/*"
+      - "src/services/**/*"
+
+run:
+  agent: sonnet
+
+  task: |
+    You are a timeout configuration validator. Your job is to ensure all external
+    calls have explicit, appropriate timeout configurations.
+    
+    ============================================================================
+    VALIDATION METHODOLOGY
+    ============================================================================
+    
+    1. IDENTIFY EXTERNAL CALLS WITHOUT TIMEOUTS
+       
+       HTTP Clients:
+       ```typescript
+       // ✗ WRONG: No timeout (defaults to 0 = infinite in axios)
+       await axios.get('https://api.example.com/data');
+       
+       // ✓ CORRECT: Explicit timeout
+       await axios.get('https://api.example.com/data', { timeout: 5000 });
+       ```
+       
+       AWS SDK:
+       ```typescript
+       // ✗ WRONG: No request timeout configured
+       const client = new DynamoDBClient({});
+       
+       // ✓ CORRECT: Explicit timeout
+       const client = new DynamoDBClient({
+         requestHandler: new NodeHttpHandler({
+           requestTimeout: 3000,
+           connectionTimeout: 1000,
+         }),
+       });
+       ```
+       
+       Database:
+       ```typescript
+       // ✗ WRONG: No query timeout
+       await pool.query('SELECT * FROM large_table');
+       
+       // ✓ CORRECT: Query timeout
+       await pool.query({ text: 'SELECT * FROM large_table', timeout: 5000 });
+       ```
+       
+       Redis:
+       ```typescript
+       // ✗ WRONG: No timeout on Redis operations
+       await redis.get(key);
+       
+       // ✓ CORRECT: Command timeout configured
+       const redis = new Redis({ commandTimeout: 1000, connectTimeout: 3000 });
+       ```
+       
+       fetch API:
+       ```typescript
+       // ✗ WRONG: No timeout (fetch has no built-in timeout)
+       await fetch('https://api.example.com/data');
+       
+       // ✓ CORRECT: AbortController timeout
+       const controller = new AbortController();
+       setTimeout(() => controller.abort(), 5000);
+       await fetch('https://api.example.com/data', { signal: controller.signal });
+       ```
+    
+    2. VALIDATE TIMEOUT VALUES
+       
+       Guidelines:
+       - HTTP calls: 1-10 seconds (based on dependency SLA)
+       - Database queries: 3-30 seconds (based on query complexity)
+       - Redis operations: 100ms-2 seconds
+       - gRPC calls: 1-10 seconds
+       - Connection establishment: 1-5 seconds
+       
+       Flag if:
+       - Timeout > 30 seconds (likely too long for synchronous request)
+       - Timeout > service's own SLA (impossible to meet SLA)
+       - Timeout = 0 or undefined (infinite, most dangerous)
+       - Multiple sequential calls with timeouts exceeding total budget
+    
+    3. VALIDATE TIMEOUT BUDGET
+       
+       If a request handler calls multiple external services:
+       ```typescript
+       // Service SLA: 3000ms total
+       // ✗ WRONG: Each call has 5s timeout, total could be 15s
+       const user = await userService.get(id, { timeout: 5000 });
+       const orders = await orderService.list(id, { timeout: 5000 });
+       const recs = await recService.get(id, { timeout: 5000 });
+       
+       // ✓ CORRECT: Timeouts fit within budget
+       const user = await userService.get(id, { timeout: 1000 });
+       const orders = await orderService.list(id, { timeout: 1000 });
+       const recs = await recService.get(id, { timeout: 500 });
+       // Total max: 2500ms, within 3000ms SLA
+       ```
+    
+    ============================================================================
+    OUTPUT FORMAT
+    ============================================================================
+    
+    ```
+    [SEVERITY] Missing/Invalid Timeout
+    File: <file path>
+    Line: <line number>
+    
+    External Call: <the call without timeout>
+    Default Timeout: <what the library defaults to>
+    
+    Issue: <specific problem>
+    Impact: <what could happen>
+    
+    Recommendation: <suggested timeout value and how to set it>
+    
+    Example fix:
+    <corrected code>
+    ```
+    
+    CRITICAL:
+    - No timeout on HTTP calls to external services
+    - No timeout on database queries in request path
+    - Infinite timeout (timeout: 0 or missing entirely)
+    
+    HIGH:
+    - Timeout exceeds service SLA (can't meet SLA even if dep responds)
+    - No connection timeout (slow DNS/TCP can block indefinitely)
+    - fetch() without AbortController
+    
+    MEDIUM:
+    - Timeout > 30s on synchronous operations
+    - No timeout on Redis commands (low risk but poor practice)
+    - Sequential calls with combined timeout exceeding budget
+    
+    LOW:
+    - Using library default timeouts (may be acceptable if documented)
+    - Timeout slightly longer than optimal
+    
+    NO VIOLATIONS Example:
+    ```
+    ✅ Timeout Validation Passed
+    
+    External calls found: 4
+    ✓ Stripe API: 5000ms request timeout, 3000ms connection timeout
+    ✓ DynamoDB: 3000ms request timeout, 1000ms connection timeout
+    ✓ Redis: 1000ms command timeout, 3000ms connection timeout
+    ✓ Internal Auth Service: 2000ms timeout
+    
+    Total budget: 11000ms (sequential worst case)
+    Service SLA: 15000ms ✓ (within budget)
+    ```
+    
+    ============================================================================
+    CONTEXT
+    ============================================================================
+    
+    Changed files: ${KIRO_CHANGED_FILES}
+    
+    Focus on CRITICAL and HIGH severity findings.
+
+  approval: none
+
+on_failure: warn
+
+# ============================================================================
+# TIMEOUT BEST PRACTICES REFERENCE
+# ============================================================================
+#
+# Timeout Types:
+#   - Connection Timeout: Time to establish TCP connection (1-5s)
+#   - Request Timeout: Time for complete request/response cycle (1-30s)
+#   - Socket Timeout: Time between data packets (5-60s)
+#   - Idle Timeout: Time before closing idle connection (30-300s)
+#
+# Budget Calculation:
+#   Service SLA = sum(sequential dependency timeouts) + processing time + buffer
+#   Example: 3 deps at 1s each + 500ms processing + 500ms buffer = 4s SLA
+#
+# Common Default Timeouts (DANGEROUS):
+#   - axios: 0 (infinite!)
+#   - node-fetch: none (infinite!)
+#   - AWS SDK v3: 0 (no timeout!)
+#   - pg (PostgreSQL): 0 (no timeout!)
+#   - ioredis: 10000ms (10s, usually too long)
+#   - Go http.Client: 0 (infinite!)
+#
+# ============================================================================
