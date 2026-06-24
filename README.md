@@ -8,22 +8,22 @@ This repository maps directly to the **[Kiro Tactical Guide](./Kiro%20Tactical%2
 
 ## What Problem Does This Solve?
 
-Cloud Engineering and DevOps teams face 10 systematic challenges that compound in the AI era:
+Cloud Engineering and DevOps teams face 6 primary systematic challenges (plus additional concerns during scaling) that compound in the AI era. This repository provides concrete solutions including the new **Powers** capability that extends Kiro into production intelligence:
 
 | Problem | Impact | What You'll Find Here |
 |---------|--------|----------------------|
-| **Security & compliance eating engineering time** | 62% rank as #1 challenge; 49% of weekly time on security (DuploCloud 2026) | Local secret scanning, IAM validation, pre-send filtering |
-| **AI destabilizing delivery** | 25% ↑ in AI adoption = 7.2% ↓ in delivery stability (DORA 2025) | Test-on-save hooks, spec constraint validation |
-| **Engineer burnout from repetitive work** | 47% report burnout; 36% of time on manual tasks (Harness 2026) | Auto-update docs, service scaffolding, client regeneration |
-| **Deployment velocity gap** | 77% wait for others; only 29% can deploy on demand (Harness 2024) | API change cascading, auto-promotion, golden spec enforcement |
-| **Cognitive overload** | Teams run 7 CI/CD systems, 5 monitoring solutions (DORA 2025) | Consolidated hook-based automation, MCP integrations |
-| **AI-generated code causing rework** | 5+ prompt iterations; 48% cite rework as bottleneck (DevOps.com 2026) | Spec-first workflow, model routing strategies |
-| **AI tools leaking sensitive data** | 68% experienced data leakage (Cyberhaven 2024) | Pre-send scanning, excluded-paths steering, region controls |
-| **Fragmented toolchains** | IaC "part of the problem" not solution (DuploCloud 2026) | Migration patterns, unified hooks, consolidation guides |
-| **FSI regulatory complexity** | OCC/FDIC/Fed/SEC simultaneous compliance requirements | Deployment windows, approval workflows, audit trails |
-| **Knowledge loss when engineers leave** | 47% burnout → experienced engineers leaving (DuploCloud 2026) | Specs capture "why", post-incident learning hooks |
+| **1. Security & compliance eating engineering time** | 62% rank as #1 challenge; 49% of weekly time on security (DuploCloud 2026) | Local secret scanning, IAM validation, pre-send filtering |
+| **2. AI destabilizing delivery** | 25% ↑ in AI adoption = 7.2% ↓ in delivery stability (DORA 2025) | Test-on-save hooks, spec constraint validation |
+| **3. Deployment velocity gap** | 77% wait for others; only 29% can deploy on demand (Harness 2024) | API change cascading, auto-promotion, golden spec enforcement |
+| **4. AI tools leaking sensitive data** | 68% experienced data leakage (Cyberhaven 2024) | Pre-send scanning, excluded-paths steering, region controls |
+| **5. FSI regulatory complexity** | OCC/FDIC/Fed/SEC simultaneous compliance requirements | Deployment windows, approval workflows, audit trails |
+| **6. Knowledge loss when engineers leave** | 47% burnout → experienced engineers leaving (DuploCloud 2026) | Specs capture "why", post-incident learning hooks |
 
-**This repository provides the artifacts** to solve these problems—not as theory, but as copy-paste ready hooks, specs, and working examples.
+**Secondary concerns** (emerge during scaling): Engineer burnout from repetitive work (47% report burnout; 36% of time on manual tasks), cognitive overload (teams run 7 CI/CD systems, 5 monitoring solutions), fragmented toolchains (IaC "part of the problem" not solution), cost visibility (Bedrock spend tracking).
+
+**Powers** (NEW): Production intelligence capabilities that extend Kiro beyond build-time into runtime operations - see section below.
+
+**This repository provides the artifacts** to solve these problems—not as theory, but as copy-paste ready hooks, specs, Powers, and working examples that map directly to the **[Kiro Tactical Guide](./Kiro%20Tactical%20Guide.md)**.
 
 ---
 
@@ -32,10 +32,10 @@ Cloud Engineering and DevOps teams face 10 systematic challenges that compound i
 ```
 kiro-cloudeng-devops/
 ├── hooks/               # Ready-to-use automation
-│   ├── security/       # Secret scanning, IAM validation (Concern 1, 7)
+│   ├── security/       # Secret scanning, IAM validation (Concerns 1, 4)
 │   ├── stability/      # Test-on-save, spec validation (Concern 2)
-│   ├── automation/     # Doc updates, scaffolding (Concern 3)
-│   └── regulatory/     # Deployment windows, approvals (Concern 9)
+│   ├── automation/     # Doc updates, scaffolding (burnout reduction)
+│   └── regulatory/     # Deployment windows, approvals (Concern 5)
 │
 ├── examples/           # Complete working projects
 │   ├── payment-processor/    # Security: PCI DSS, secret scanning
@@ -44,19 +44,22 @@ kiro-cloudeng-devops/
 │   └── settlement-engine/    # Regulatory: FSI compliance
 │
 ├── specs/              # Spec templates and golden standards
-│   ├── golden/        # Org-wide standards (Concern 4, 10)
+│   ├── golden/        # Org-wide standards (Concern 3, 6)
 │   └── templates/     # Service, feature, infrastructure templates
 │
-├── toolkit/           # Steering rules and MCP integrations
-│   ├── steering/     # Data residency, excluded paths (Concern 7)
-│   └── mcp/          # CloudWatch, PagerDuty (Concern 5)
+├── toolkit/           # Steering rules, MCP integrations, and Powers
+│   ├── steering/     # Data residency, excluded paths (Concern 4)
+│   ├── mcp/          # CloudWatch, PagerDuty (cognitive overload)
+│   ├── hooks/        # JSON hooks (production format)
+│   └── powers/       # Curated capability packages (production intelligence)
+│       └── spec-test-quality/  # Test quality enforcement power
 │
 ├── docs/              # Comprehensive guides
 │   ├── guides/       # How-to guides for specific scenarios
-│   ├── patterns/     # Migration patterns, customization (Concern 8)
+│   ├── patterns/     # Migration patterns, customization
 │   └── reference/    # Detailed configuration reference
 │
-├── Kiro Tactical Guide.md  # Maps problems to solutions
+├── Kiro Tactical Guide.md  # Maps 6 primary concerns to solutions + Powers
 ├── QUICKSTART.md           # 30-minute path to value
 └── CONTRIBUTING.md         # Guidelines for contributing
 ```
@@ -67,13 +70,14 @@ kiro-cloudeng-devops/
 
 ### If your #1 problem is...
 
-**🔐 Security/Secrets in code** → Copy `hooks/security/scan-secrets.yaml` or `scan-secrets-regex.yaml`  
-**✅ AI-generated code stability** → Copy `hooks/stability/test-on-save.yaml`  
+**🔐 Security/Secrets in code (Concern 1)** → Copy `hooks/security/scan-secrets.yaml` or `scan-secrets-regex.yaml`  
+**✅ AI-generated code stability (Concern 2)** → Copy `hooks/stability/test-on-save.yaml`  
+**🚀 Waiting for others to deploy (Concern 3)** → Copy `hooks/deployment/cascade-api-change.yaml`  
+**� Data leakage from AI tools (Concern 4)** → Copy `toolkit/steering/excluded-paths.yaml`  
+**📋 FSI regulatory compliance (Concern 5)** → Copy `hooks/regulatory/deployment-window.yaml`  
+**� Knowledge loss (Concern 6)** → Copy `specs/templates/service.spec.md` and start documenting "why"  
 **🤖 Repetitive documentation work** → Copy `hooks/automation/update-docs.yaml`  
-**🚀 Waiting for others to deploy** → Copy `hooks/deployment/cascade-api-change.yaml`  
-**📋 FSI regulatory compliance** → Copy `hooks/regulatory/deployment-window.yaml`  
-**💾 Data leakage from AI tools** → Copy `toolkit/steering/excluded-paths.yaml`  
-**📚 Knowledge loss** → Copy `specs/templates/service.spec.md` and start documenting "why"
+**🧪 Test quality for AI code** → Install `toolkit/powers/spec-test-quality/` Power
 
 **Detailed setup:** See [QUICKSTART.md](./QUICKSTART.md) for step-by-step instructions.
 
@@ -99,11 +103,64 @@ kiro-cloudeng-devops/
 
 ### For Decision-Makers Evaluating Kiro
 
-1. **Read the [Kiro Tactical Guide](./Kiro%20Tactical%20Guide.md)** — Understand the 10 concerns and how Kiro addresses them
+1. **Read the [Kiro Tactical Guide](./Kiro%20Tactical%20Guide.md)** — Understand the 6 primary concerns, Powers capability, and how Kiro addresses them
 2. **Review working examples** — See complete implementations in [examples/](./examples/)
 3. **Try the Quick Start** — Solve one problem in 30 minutes using [QUICKSTART.md](./QUICKSTART.md)
 4. **Assess impact** — Review metrics showing time savings, stability improvements, velocity gains
 5. **Plan rollout** — See [docs/adoption-path.md](./docs/adoption-path.md) for phased deployment strategy
+
+---
+
+## Kiro Powers: Production Intelligence (Solution Layer)
+
+**Powers extend Kiro beyond build-time into production operations** - they are not a concern, but a solution layer that addresses runtime challenges. Kiro Powers are curated packages (MCP servers + steering files + hooks) that give Kiro specialized capabilities for production operations.
+
+### What Are Powers?
+
+Powers extend Kiro beyond build-time development into production operations and runtime intelligence. Each Power packages:
+- **MCP Server**: Connects to external tools/data (CloudWatch, X-Ray, Security Agent)
+- **Steering Files**: Domain-specific instructions for AI routing
+- **Hooks**: Automated actions triggered by events
+
+### Available in This Repository
+
+#### Spec-Driven Test Quality Power
+**Location**: `toolkit/powers/spec-test-quality/`
+
+Enforces comprehensive test quality for AI-generated code through:
+- **Coverage enforcement**: Automatic line/branch coverage checks on file save
+- **Mutation testing**: Validates tests catch code mutations (prevents "tests pass but code is wrong")
+- **Traceability**: Maps spec requirements → implementation → tests → coverage
+- **Spec-driven validation**: Test expectations defined in specs, AI implements, Power validates
+
+**Use for**: Any TypeScript/Jest service (API services, data processing, integration services)
+
+**Quick install**:
+```bash
+# Copy hooks
+cp -r toolkit/powers/spec-test-quality/hooks/* .kiro/hooks/quality/
+
+# Copy steering file  
+cp toolkit/powers/spec-test-quality/steering/test-quality.md .kiro/steering/
+
+# Copy Stryker config
+cp toolkit/powers/spec-test-quality/config/stryker.conf.json ./
+
+# Install dependencies
+npm install --save-dev @stryker-mutator/core @stryker-mutator/jest-runner
+```
+
+**See**: [toolkit/powers/spec-test-quality/POWER.md](./toolkit/powers/spec-test-quality/POWER.md) for complete documentation
+
+### AWS Powers (Available via Powers Panel)
+
+These Powers are available for install via the Kiro Powers Panel:
+
+- **AWS DevOps Agent**: Incident investigation, cost optimization, release readiness, remediation code generation
+- **AWS Security Agent**: Threat modeling, continuous security scanning, penetration testing, compliance packs
+- **AWS Observability**: Alarm response, gap analysis, distributed tracing, SLO monitoring
+
+**Learn more**: See [Kiro Tactical Guide - Section 7](./Kiro%20Tactical%20Guide.md#7-kiro-powers--mcp--production-intelligence-in-the-ide) for complete Powers documentation.
 
 ---
 
@@ -170,6 +227,18 @@ kiro-cloudeng-devops/
 - Infrastructure as code (CDK)
 - README explaining which concerns it addresses
 - "How to run this example" section with prerequisites
+
+### 🔋 Powers (Curated Capability Packages)
+
+| Power | Purpose | Components | Use Case |
+|-------|---------|------------|----------|
+| [Spec-Driven Test Quality](./toolkit/powers/spec-test-quality/) | Enforce test quality for AI code | 4 hooks + steering + Stryker config | Prevent "tests pass but code is wrong" |
+
+**Each Power includes:**
+- Complete documentation (POWER.md)
+- Installation guide (README.md)
+- All required hooks, steering files, and configurations
+- Spec templates and examples
 
 ---
 
@@ -241,6 +310,24 @@ excluded_paths:
 - Enforce compliance (restrict to specific AWS regions)
 - Control costs (route to appropriate models by task complexity)
 
+### Powers: Curated Capability Packages
+
+Powers package MCP servers, steering files, and hooks into cohesive capabilities:
+
+**Components of a Power:**
+- **MCP Server**: Connects to external tools (CloudWatch, Security Agent)
+- **Steering Files**: Domain-specific AI routing instructions
+- **Hooks**: Event-driven automation
+- **Documentation**: Complete setup and usage guides
+
+**Example Power**: Spec-Driven Test Quality
+- Enforces coverage thresholds automatically
+- Runs mutation testing to validate test quality
+- Generates traceability reports (spec → tests → coverage)
+- Works for any TypeScript/Jest service
+
+**See**: `toolkit/powers/spec-test-quality/` for a complete example
+
 ---
 
 ## Quick Start: Solve One Problem in 30 Minutes
@@ -265,9 +352,11 @@ See [QUICKSTART.md](./QUICKSTART.md) for step-by-step instructions.
 
 ## Learn More
 
-- **[Kiro Tactical Guide](./Kiro%20Tactical%20Guide.md)** — Deep dive into the 10 concerns and how Kiro addresses them
+- **[Kiro Tactical Guide](./Kiro%20Tactical%20Guide.md)** — Deep dive into the 10 concerns and how Kiro addresses them (now includes Powers section)
+- **[Powers Documentation](./Kiro%20Tactical%20Guide.md#7-kiro-powers--mcp--production-intelligence-in-the-ide)** — Complete guide to Powers: what they are, how to use them, AWS Powers overview
+- **[Spec-Driven Test Quality Power](./toolkit/powers/spec-test-quality/POWER.md)** — Complete documentation for the test quality enforcement power
 - **[Decision Tree](./docs/decision-tree.md)** — Interactive flowchart to find the right artifacts for your situation
-- **[Artifact Index](./docs/artifact-index.md)** — Complete catalog of all hooks, specs, and examples with metadata
+- **[Artifact Index](./docs/artifact-index.md)** — Complete catalog of all hooks, specs, examples, and Powers with metadata
 - **[Before/After Transformations](./docs/before-after.md)** — Concrete metrics showing time saved and incidents reduced
 - **[DORA Metrics Mapping](./docs/dora-metrics.md)** — How toolkit artifacts improve DORA metrics
 - **[Adoption Path](./docs/adoption-path.md)** — Phased rollout strategy from Quick Start to org-wide
