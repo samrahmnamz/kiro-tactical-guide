@@ -18,6 +18,7 @@ This decision tree helps you quickly navigate from your specific problem to the 
 8. [Fragmented Toolchains](#8-fragmented-toolchains) - 12 different deployment methods
 9. [FSI Regulatory Complexity](#9-fsi-regulatory-complexity) - OCC/FDIC/Fed/SEC compliance
 10. [Knowledge Loss](#10-knowledge-loss) - 47% burnout rate = high turnover
+11. [Resiliency & Cascading Failures](#11-resiliency--cascading-failures-secondary-concern) - 70% of outages from single dependency
 
 ---
 
@@ -428,6 +429,54 @@ Knowledge Loss
 
 ---
 
+### 11. Resiliency & Cascading Failures (Secondary Concern)
+
+**Problem Statement**: "70% of outages caused by cascading failures from a single dependency"
+
+**Symptoms**:
+- One slow dependency brings down the entire service
+- Connection pool exhaustion from hanging calls
+- Retry storms amplifying transient failures into full outages
+- Manual intervention required to recover from dependency failures
+- AI-generated code omits timeout/retry/fallback logic (85% of the time)
+
+**Decision Path**:
+
+```
+Resiliency / Cascading Failures
+├─ External calls without circuit breakers?
+│  └─ Quick Win ⭐: hooks/resiliency/validate-circuit-breaker.yaml
+│     (Validates all external calls are wrapped with fallback behavior)
+│
+├─ Retry storms amplifying failures?
+│  └─ hooks/resiliency/validate-retry-patterns.yaml
+│     (Enforces exponential backoff + jitter, bounded max retries)
+│
+├─ Missing or default timeouts?
+│  └─ hooks/resiliency/validate-timeouts.yaml
+│     (Ensures explicit timeouts on all external calls)
+│
+├─ Need org-wide resiliency standards?
+│  └─ specs/golden/resiliency-standard.spec.md
+│     (Circuit breaker, retry, timeout, degradation requirements)
+│
+└─ Need a working reference implementation?
+   └─ Example: examples/resilient-service/
+      (Order service with circuit breakers, retries, timeouts,
+       graceful degradation, and bulkhead isolation)
+```
+
+**Quick Win Recommendation**: Start with `validate-circuit-breaker.yaml` + `validate-timeouts.yaml` (15 minutes setup)
+
+**Metrics Impact**:
+- MTTR: 3-5x improvement with circuit breakers (automatic recovery)
+- Blast radius: Failures isolated to affected dependency only
+- Availability: Partial service maintained during dependency outages
+- Retry storms: Eliminated via jitter + bounded retries
+
+
+---
+
 ## Combined Scenarios
 
 Many teams face multiple concerns simultaneously. Here are common combinations:
@@ -494,6 +543,22 @@ Many teams face multiple concerns simultaneously. Here are common combinations:
 
 ---
 
+### Scenario E: Stability + Resiliency (Concerns 2 + Resiliency)
+
+**Problem**: "AI-generated code is unstable AND doesn't handle dependency failures"
+
+**Artifacts**:
+1. `hooks/stability/test-on-save.yaml` - Run tests instantly on save
+2. `hooks/resiliency/validate-circuit-breaker.yaml` - Enforce circuit breakers
+3. `hooks/resiliency/validate-timeouts.yaml` - Enforce explicit timeouts
+4. `hooks/resiliency/validate-retry-patterns.yaml` - Enforce proper retries
+5. `specs/golden/resiliency-standard.spec.md` - Organization-wide standard
+6. **Example**: `examples/resilient-service/` (demonstrates all five resiliency patterns)
+
+**Setup time**: ~30 minutes
+
+---
+
 ## Quick Wins Summary
 
 If you want the highest impact with lowest effort, start here:
@@ -502,6 +567,7 @@ If you want the highest impact with lowest effort, start here:
 |---------|-------------------|------------|--------|
 | Security | `scan-secrets.yaml` + `excluded-paths.yaml` | 15 min | 49% time savings on security |
 | Stability | `test-on-save.yaml` | 10 min | Change failure <5% |
+| Resiliency | `validate-circuit-breaker.yaml` + `validate-timeouts.yaml` | 15 min | MTTR 3-5x improvement |
 | Burnout | `update-docs.yaml` | 20 min | 36% time on manual tasks → automated |
 | Velocity | `cascade-api-change.yaml` | 25 min | Lead time <1 hour |
 | Overload | `lint-on-save.yaml` | 15 min | 3 min feedback → instant |

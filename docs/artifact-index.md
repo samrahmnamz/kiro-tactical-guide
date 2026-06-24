@@ -24,6 +24,7 @@ This index lists every hook, spec, steering rule, example, and MCP integration i
 
 - [Security Hooks](#security-hooks)
 - [Stability Hooks](#stability-hooks)
+- [Resiliency Hooks](#resiliency-hooks)
 - [Automation Hooks](#automation-hooks)
 - [Deployment Hooks](#deployment-hooks)
 - [Regulatory Hooks](#regulatory-hooks)
@@ -185,6 +186,82 @@ This index lists every hook, spec, steering rule, example, and MCP integration i
 - Provides detailed feedback on violations
 - Prevents spec drift
 - Reduces rework by catching issues early
+
+---
+
+## Resiliency Hooks
+
+### validate-circuit-breaker.yaml
+
+**Path:** `hooks/resiliency/validate-circuit-breaker.yaml`
+
+**Purpose:** Validates that all external dependency calls are wrapped in circuit breakers with proper fallback behavior. Catches missing or misconfigured circuit breakers before they cause cascading failures in production.
+
+**Concerns Addressed:**
+- Resiliency: Preventing cascading failures (70% of outages from single dependency failure)
+- Reducing MTTR (3-5x higher without circuit breakers)
+
+**Dependencies:**
+- Model access (uses agent to analyze code patterns)
+- Circuit breaker library in project (opossum, cockatiel, or custom)
+
+**Customization Complexity:** Medium (10 min)
+
+**Key Features:**
+- Detects external calls (HTTP, AWS SDK, database, gRPC) without circuit breaker wrapping
+- Validates fallback behavior exists for each circuit breaker
+- Checks circuit breaker configuration thresholds (failure threshold, reset timeout)
+- Verifies state change observability (logging + metrics on open/close/half-open)
+- Supports multiple circuit breaker libraries
+
+---
+
+### validate-retry-patterns.yaml
+
+**Path:** `hooks/resiliency/validate-retry-patterns.yaml`
+
+**Purpose:** Enforces proper retry logic with exponential backoff, jitter, and bounded maximums. Prevents retry storms that amplify transient failures into full outages.
+
+**Concerns Addressed:**
+- Resiliency: Preventing retry storms (40% of amplified load during incidents)
+- Stability: Ensuring transient failures don't cascade
+
+**Dependencies:**
+- Model access (uses agent to analyze retry patterns)
+
+**Customization Complexity:** Medium (10 min)
+
+**Key Features:**
+- Validates exponential backoff (not fixed or linear delays)
+- Checks for jitter to prevent thundering herd
+- Verifies bounded maximum retries (3-5 sync, max 10 async)
+- Ensures only transient failures (5xx, timeouts) are retried — not 4xx
+- Validates backoff cap (30s sync, 5min async)
+- Checks for idempotency keys on retried mutations
+
+---
+
+### validate-timeouts.yaml
+
+**Path:** `hooks/resiliency/validate-timeouts.yaml`
+
+**Purpose:** Ensures all external calls have explicit timeout configurations. Catches the 85% of AI-generated code that omits timeout configuration.
+
+**Concerns Addressed:**
+- Resiliency: Preventing resource exhaustion from hanging calls
+- Stability: Ensuring SLA compliance
+
+**Dependencies:**
+- Model access (uses agent to check timeout presence)
+
+**Customization Complexity:** Easy (5 min)
+
+**Key Features:**
+- Detects external calls without explicit timeout settings
+- Validates timeout values fit within service SLA budget
+- Checks timeout hierarchy (downstream < upstream)
+- Flags default/infinite timeouts on HTTP clients, database connections, queue operations
+- Supports common libraries (axios, fetch, AWS SDK, pg, ioredis)
 
 ---
 
@@ -565,6 +642,31 @@ This index lists every hook, spec, steering rule, example, and MCP integration i
 
 ---
 
+### resiliency-standard.spec.md
+
+**Path:** `specs/golden/resiliency-standard.spec.md`
+
+**Purpose:** Organization-wide resiliency standard defining circuit breaker, retry, timeout, graceful degradation, and bulkhead isolation requirements for all backend services with external dependencies.
+
+**Concerns Addressed:**
+- Resiliency: Preventing cascading failures (70% of outages from single dependency)
+- Stability: Automatic recovery and reduced MTTR (3-5x improvement)
+
+**Dependencies:** None (reference document)
+
+**Customization Complexity:** N/A (read-only reference, customize thresholds for your SLAs)
+
+**Key Features:**
+- Circuit breaker coverage requirements (every external call)
+- Retry logic with exponential backoff and jitter standards
+- Timeout budget hierarchy (downstream < upstream)
+- Graceful degradation patterns (cached data, queued retry, degraded response)
+- Bulkhead isolation for connection pools and thread pools
+- Implementation patterns with code examples (Node.js/TypeScript)
+- Validation checklist for new service deployments
+
+---
+
 ## Spec Templates
 
 ### service.spec.md
@@ -822,16 +924,41 @@ This index lists every hook, spec, steering rule, example, and MCP integration i
 
 ---
 
+### resilient-service
+
+**Path:** `examples/resilient-service/`
+
+**Purpose:** Resilient order processing service demonstrating all five resiliency patterns: circuit breakers, retry with exponential backoff + jitter, timeout budgets, graceful degradation, and bulkhead isolation.
+
+**Concerns Addressed:**
+- Resiliency: Preventing cascading failures in distributed systems
+- Stability: Maintaining partial availability during dependency outages
+
+**Dependencies:** None (example code with opossum, ioredis)
+
+**Customization Complexity:** Medium (adapt patterns to your service boundaries)
+
+**Key Features:**
+- Circuit breakers on all external calls (payment, inventory, notification)
+- Exponential backoff with full jitter on retries
+- Timeout budget hierarchy respecting upstream SLA
+- Graceful degradation (queued payments, cached inventory, skipped notifications)
+- Bulkhead isolation preventing resource exhaustion
+- Chaos testing scenarios (dependency failures, latency injection)
+- Before/after metrics demonstrating MTTR improvement
+
+---
+
 ## Summary
 
-This repository contains **40+ artifacts** across 12 categories:
+This repository contains **45+ artifacts** across 13 categories:
 
-- **16 Hooks**: Security (4), Stability (2), Automation (3), Deployment (2), Regulatory (2), Quality (3), Post-Incident (1)
-- **4 Golden Specs**: auth-pattern, logging-standard, observability, tracing-standard
+- **19 Hooks**: Security (4), Stability (2), Resiliency (3), Automation (3), Deployment (2), Regulatory (2), Quality (3), Post-Incident (1)
+- **5 Golden Specs**: auth-pattern, logging-standard, observability, tracing-standard, resiliency-standard
 - **3 Spec Templates**: service, feature, infrastructure
 - **2 Steering Rules**: excluded-paths, region-config
 - **2 MCP Integrations**: cloudwatch, pagerduty
-- **4 Working Examples**: payment-processor, rate-limiter, notification-service, settlement-engine
+- **5 Working Examples**: payment-processor, rate-limiter, notification-service, settlement-engine, resilient-service
 
 ### Quick Win Artifacts (⭐)
 

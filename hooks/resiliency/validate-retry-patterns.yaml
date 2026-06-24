@@ -1,0 +1,291 @@
+# Resiliency Hook: Validate Retry Patterns
+#
+# PURPOSE: Enforce proper retry logic with exponential backoff and jitter for all
+#          external service calls. Prevents retry storms that amplify transient
+#          failures into full outages.
+#
+# REQUIREMENTS ADDRESSED:
+# - Prevent retry storms from overwhelming recovering services
+# - Enforce exponential backoff with jitter (not linear or fixed delays)
+# - Validate max retry limits to prevent infinite loops
+# - Distinguish transient vs permanent failures (don't retry permanent)
+#
+# ============================================================================
+# CUSTOMIZATION GUIDE
+# ============================================================================
+#
+# REQUIRED CHANGES:
+# 1. Update SOURCE_PATHS to match your source code directories
+# 2. Set retry library detection patterns for your stack:
+#    - Node.js: p-retry, async-retry, axios-retry, cockatiel
+#    - Python: tenacity, retrying, backoff
+#    - Go: cenkalti/backoff, avast/retry-go
+#    - Java: resilience4j, spring-retry
+#
+# OPTIONAL CHANGES:
+# 3. Retry configuration thresholds:
+#    - MAX_RETRIES_LIMIT: Maximum allowed retries (default: 5)
+#    - MIN_BACKOFF_MS: Minimum initial backoff (default: 100ms)
+#    - MAX_BACKOFF_MS: Maximum backoff cap (default: 30000ms)
+#    - JITTER_REQUIRED: Whether jitter is mandatory (default: true)
+#
+# 4. Failure handling:
+#    - on_failure: warn (default) - Report improper retry patterns
+#    - on_failure: block_context - Block if retry storm risk detected
+#
+# ============================================================================
+
+name: validate-retry-patterns
+description: |
+  Validates that retry logic follows best practices to prevent retry storms.
+  
+  Checks:
+  - Exponential backoff (not fixed/linear delays)
+  - Jitter added to prevent thundering herd
+  - Maximum retry limit defined (no infinite retries)
+  - Transient vs permanent failure classification
+  - Retry budgets for system-wide protection
+  - Idempotency consideration for retried operations
+  
+  Why this matters:
+  - Retry storms are the #1 cause of cascading failures
+  - 10 services each retrying 3x = 30x amplification on failing dependency
+  - Without jitter, retries synchronize and spike load at same intervals
+  - AI-generated code often uses fixed delays or no backoff at all
+
+on:
+  fileEdited:
+    paths:
+      - "src/**/*.ts"
+      - "src/**/*.tsx"
+      - "src/**/*.js"
+      - "src/**/*.jsx"
+      - "lib/**/*.ts"
+      - "lib/**/*.js"
+      - "app/**/*.py"
+      - "src/**/*.py"
+      - "pkg/**/*.go"
+      - "internal/**/*.go"
+      - "src/**/*.rs"
+      - "src/**/*.java"
+      - "src/clients/**/*"
+      - "src/integrations/**/*"
+      - "src/services/**/*"
+
+run:
+  agent: sonnet
+
+  task: |
+    You are a retry pattern validator. Your job is to ensure all retry logic
+    follows best practices that prevent retry storms and cascading failures.
+    
+    ============================================================================
+    VALIDATION METHODOLOGY
+    ============================================================================
+    
+    1. IDENTIFY RETRY PATTERNS
+       Scan for any retry-related code:
+       
+       Explicit retry loops:
+       - for/while loops with catch blocks that retry
+       - setTimeout/sleep + retry counter patterns
+       - Recursive function calls on error
+       
+       Retry libraries:
+       - p-retry, async-retry, axios-retry (Node.js)
+       - tenacity, retrying, backoff (Python)
+       - cenkalti/backoff, avast/retry-go (Go)
+       - resilience4j, spring-retry (Java)
+       - cockatiel Policy.retry() (Node.js)
+       
+       Framework retries:
+       - AWS SDK maxAttempts configuration
+       - Axios interceptors with retry logic
+       - gRPC retry policies
+    
+    2. VALIDATE BACKOFF STRATEGY
+       
+       REQUIRED: Exponential backoff
+       ```typescript
+       // ✓ CORRECT: Exponential backoff
+       const delay = baseDelay * Math.pow(2, attempt);
+       
+       // ✗ WRONG: Fixed delay (retry storm risk)
+       const delay = 1000; // Same delay every time
+       
+       // ✗ WRONG: Linear backoff (too slow to back off)
+       const delay = baseDelay * attempt;
+       ```
+       
+       REQUIRED: Jitter (randomization)
+       ```typescript
+       // ✓ CORRECT: Full jitter
+       const delay = Math.random() * baseDelay * Math.pow(2, attempt);
+       
+       // ✓ CORRECT: Decorrelated jitter
+       const delay = Math.min(maxDelay, random(baseDelay, prevDelay * 3));
+       
+       // ✗ WRONG: No jitter (thundering herd)
+       const delay = baseDelay * Math.pow(2, attempt); // All clients retry at same time
+       ```
+    
+    3. VALIDATE RETRY LIMITS
+       
+       REQUIRED: Maximum retry count
+       ```typescript
+       // ✓ CORRECT: Bounded retries
+       const MAX_RETRIES = 3;
+       for (let i = 0; i < MAX_RETRIES; i++) { ... }
+       
+       // ✗ WRONG: Unbounded retries
+       while (true) { try { ... } catch { continue; } }
+       
+       // ✗ WRONG: Excessive retries
+       const MAX_RETRIES = 20; // Too many, masks permanent failures
+       ```
+       
+       Guidelines:
+       - Maximum 3-5 retries for most operations
+       - Maximum 2 retries for user-facing requests (latency budget)
+       - Maximum 10 retries only for background/batch operations
+    
+    4. VALIDATE FAILURE CLASSIFICATION
+       
+       REQUIRED: Distinguish transient from permanent failures
+       ```typescript
+       // ✓ CORRECT: Only retry transient failures
+       if (isTransient(error)) {
+         await retry(operation);
+       } else {
+         throw error; // Permanent failure, don't retry
+       }
+       
+       // Transient: 429, 500, 502, 503, 504, ECONNREFUSED, ETIMEDOUT
+       // Permanent: 400, 401, 403, 404, 409, 422
+       
+       // ✗ WRONG: Retry all errors
+       try { await operation(); }
+       catch (e) { await retry(operation); } // Retries 404s, auth failures, etc.
+       ```
+    
+    5. VALIDATE BACKOFF CAP
+       
+       REQUIRED: Maximum delay cap
+       ```typescript
+       // ✓ CORRECT: Capped backoff
+       const delay = Math.min(MAX_DELAY, baseDelay * Math.pow(2, attempt));
+       
+       // ✗ WRONG: Uncapped (attempt 10 = 1024x base delay)
+       const delay = baseDelay * Math.pow(2, attempt); // Could be minutes
+       ```
+       
+       Guidelines:
+       - Cap at 30 seconds for synchronous operations
+       - Cap at 5 minutes for background operations
+       - Never exceed caller's timeout budget
+    
+    6. CHECK IDEMPOTENCY AWARENESS
+       
+       For retried operations that modify state:
+       ```typescript
+       // ✓ CORRECT: Idempotency key for retried mutations
+       await httpClient.post('/api/payments', data, {
+         headers: { 'Idempotency-Key': requestId }
+       });
+       
+       // ✗ WRONG: Retrying mutations without idempotency
+       await httpClient.post('/api/payments', data); // May double-charge
+       ```
+    
+    ============================================================================
+    OUTPUT FORMAT
+    ============================================================================
+    
+    For each finding, report:
+    
+    ```
+    [SEVERITY] Retry Pattern Violation
+    File: <file path>
+    Line: <line number>
+    
+    Pattern Found: <the retry code detected>
+    Issue: <specific problem>
+    Impact: <what could happen in production>
+    
+    Recommendation: <how to fix>
+    
+    Example fix:
+    <corrected code>
+    ```
+    
+    CRITICAL:
+    - No backoff (fixed delay retries on external calls)
+    - Unbounded retries (infinite retry loop)
+    - Retrying permanent failures (4xx errors)
+    - Missing jitter on high-traffic service
+    
+    HIGH:
+    - Linear instead of exponential backoff
+    - No maximum delay cap
+    - Excessive retry count (>10)
+    - Retrying non-idempotent mutations without idempotency key
+    
+    MEDIUM:
+    - Missing jitter (low-traffic service)
+    - Retry count slightly high (6-10)
+    - No failure classification (retries all errors)
+    
+    LOW:
+    - Library defaults used (may be acceptable)
+    - Missing retry metrics/logging
+    
+    NO VIOLATIONS Example:
+    ```
+    ✅ Retry Pattern Validation Passed
+    
+    Retry patterns found: 2
+    ✓ Payment Gateway: Exponential backoff (100ms base, 2x factor, ±25% jitter, max 3 retries, cap 5s)
+    ✓ DynamoDB Client: AWS SDK built-in (exponential, max 3 attempts, retries only 5xx/throttle)
+    
+    All retry patterns follow best practices.
+    ```
+    
+    ============================================================================
+    CONTEXT
+    ============================================================================
+    
+    Changed files: ${KIRO_CHANGED_FILES}
+    
+    Focus on CRITICAL and HIGH severity findings.
+
+  approval: none
+
+on_failure: warn
+
+# ============================================================================
+# RETRY BEST PRACTICES REFERENCE
+# ============================================================================
+#
+# Exponential Backoff with Full Jitter (recommended):
+#   delay = random(0, min(cap, base * 2^attempt))
+#
+# Decorrelated Jitter (alternative):
+#   delay = min(cap, random(base, prev_delay * 3))
+#
+# Retry Budget (advanced):
+#   - Track retry ratio across all requests
+#   - If retries > 10% of total requests, stop retrying
+#   - Prevents retry storms at system level
+#
+# Common Transient Errors:
+#   HTTP: 429 (rate limit), 500, 502, 503, 504
+#   Network: ECONNREFUSED, ETIMEDOUT, ECONNRESET, EAI_AGAIN
+#   AWS: ThrottlingException, ServiceUnavailable, InternalError
+#   Redis: ECONNREFUSED, LOADING, BUSY
+#
+# Common Permanent Errors (DO NOT RETRY):
+#   HTTP: 400, 401, 403, 404, 409, 422
+#   AWS: ValidationException, AccessDeniedException, ResourceNotFoundException
+#   Business: InvalidInput, NotFound, Conflict
+#
+# ============================================================================
